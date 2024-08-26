@@ -36,7 +36,7 @@
 (require 'cl-lib)
 (require 'hmac-def)
 
-(defun hex-string-to-bytes (hex &optional left-align)
+(defun jwt--hex-string-to-bytes (hex &optional left-align)
   "Convert a hex string HEX to a byte string.
 
 When LEFT-ALIGN is true, interpret odd length strings greedily
@@ -53,7 +53,7 @@ E.g. CCC becomes [204, 12] not [12 204]."
                      (seq-partition hex 2))))
     (apply #'vector res)))
 
-(defun byte-string-to-hex (bytes)
+(defun jwt--byte-string-to-hex (bytes)
   "Convert a byte string BYTES to a hex string."
   (let (res)
     (dolist (x (seq--into-list bytes))
