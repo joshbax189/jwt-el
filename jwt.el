@@ -61,6 +61,20 @@ E.g. CCC becomes [204, 12] not [12 204]."
       (push (format "%02x" x) res))
     (apply #'concat (reverse res))))
 
+(defun jwt--i2osp (x x-len)
+  "Encode number X as an X-LEN long list of bytes."
+  (when (> x (expt 256 x-len))
+    (error "Integer too large"))
+  (let (res
+        (rem 0)
+        (idx (1- x-len)))
+    (while (and (> x 0) (>= idx 0))
+      (setq rem (% x (expt 256 idx)))
+      (push (/ (- x rem) (expt 256 idx)) res)
+      (setq x rem)
+      (setq idx (1- idx)))
+    (reverse res)))
+
 ;; HMACSHA256 -- uses shared secret/symmetric
 ;; HS256
 ;; HS384
@@ -129,16 +143,161 @@ E.g. CCC becomes [204, 12] not [12 204]."
 
 ;; TODO which signing methods are supported?
 ;; rest use asymmetric PKI
+;; this is the recommended one
 ;; RSASHA256
 ;; RS256
 ;; RS384
 ;; RS512
+
+;; so sha the JSON, then sign, perhaps with epg?
+;; probably only if you want to sign your own?
+;; more flexible if you just take a public key string?
+
+;; (let ((context (epg-make-context 'OpenPGP)))
+;;   (decode-coding-string
+;;    (epg-decrypt-string context (string-as-unibyte (base64-decode-string "Eci61G6w4zh_u9oOCk_v1M_sKcgk0svOmW4ZsL-rt4ojGUH2QY110bQTYNwbEVlowW7phCg7vluX_MCKVwJkxJT6tMk2Ij3Plad96Jf2G2mMsKbxkC-prvjvQkBFYWrYnKWClPBRCyIcG0dVfBvqZ8Mro3t5bX59IKwQ3WZ7AtGBYz5BSiBlrKkp6J1UmP_bFV3eEzIHEFgzRa3pbr4ol4TK6SnAoF88rLr2NhEz9vpdHglUMlOBQiqcZwqrI-Z4XDyDzvnrpujIToiepq9bCimPgVkP54VoZzy-mMSGbthYpLqsL_4MQXaI1Uf_wKFAUuAtzVn4-ebgsKOpvKNzVA" 't)))
+;;     'utf-8))
+
+(defun read-forward-bytes (x)
+  (if (> x ?\x80)
+      (- x ?\x80)
+    x))
+
+(defun byte-to-num (x)
+  "Concat a list of bytes X and convert to number."
+  (string-to-number (apply 'concat (--map (format "%02x" it) x)) 16))
+
+;; see https://en.wikipedia.org/wiki/X.690#DER_encoding
+(defun jwt-parse-spki-rsa (spki-string)
+  "foo"
+  (setq spki-string (string-remove-prefix "-----BEGIN PUBLIC KEY-----"
+                                          (string-remove-suffix "-----END PUBLIC KEY-----"
+                                                                (string-trim spki-string))))
+  (let* ((spki-bin-string (string-to-list (base64-decode-string spki-string)))
+         ;; drop first 24 bytes
+         (spki-bin-string (seq-drop spki-bin-string 24))
+         result-n
+         result-e)
+    ;; SEQ LEN L
+    (unless (equal (seq-first spki-bin-string)
+                   ?\x30)
+      (error "Unexpected prefix, not SEQ"))
+    (setq spki-bin-string (cdr spki-bin-string))
+    (let ((fwd (read-forward-bytes (car spki-bin-string))))
+      (setq spki-bin-string (seq-drop spki-bin-string (1+ fwd))))
+    ;; INT LEN L
+    (unless (equal (seq-first spki-bin-string)
+                   ?\x02)
+      (error "Unexpected prefix %s, not INT 1" (seq-first spki-bin-string)))
+    (setq spki-bin-string (cdr spki-bin-string))
+    (let* ((der-byte (car spki-bin-string))
+           (_ (setq spki-bin-string (cdr spki-bin-string)))
+           len)
+      (if (> ?\x80 der-byte)
+          (setq len der-byte)
+        (let ((fwd (- der-byte ?\x80)))
+         (setq len (byte-to-num (seq-take spki-bin-string fwd)))
+         (setq spki-bin-string (seq-drop spki-bin-string fwd))))
+      ;; next len bytes are the actual number
+      (setq result-n (seq-drop-while (lambda (x) (= 0 x)) (seq-take spki-bin-string len)))
+      (setq spki-bin-string (seq-drop spki-bin-string len)))
+    ;; INT LEN L
+    (unless (equal (seq-first spki-bin-string)
+                   ?\x02)
+      (error "Unexpected prefix %s, not INT 2" (seq-first spki-bin-string)))
+    (setq spki-bin-string (cdr spki-bin-string))
+    (let* ((der-byte (car spki-bin-string))
+           (_ (setq spki-bin-string (cdr spki-bin-string)))
+           len)
+      (if (> ?\x80 der-byte)
+          (setq len der-byte)
+        (let ((fwd (- der-byte ?\x80)))
+         (setq len (byte-to-num (seq-take spki-bin-string fwd)))
+         (setq spki-bin-string (seq-drop spki-bin-string fwd))))
+      ;; next len bytes are the actual number
+      (setq result-e (seq-take spki-bin-string len))
+      (setq spki-bin-string (seq-drop spki-bin-string len)))
+    ;; get e
+    `(:n ,(jwt--byte-string-to-hex result-n) :e ,(jwt--byte-string-to-hex result-e))))
+
+(defun read-ignore (n str)
+  (let ((x (pop str)))
+    (unless (= x n)
+      (error "Expected %s got %s in %s" n x str)))
+  str)
+
+(defun read-len-take (str)
+  (let ((len (pop str)))
+    (cons (seq-take str len) (seq-drop str len))))
+
+(defun jwt--extract-digest-from-pkcs1-hash (input)
+  "Return hash digest (as hex) from INPUT (hex)."
+  (let* ((input (string-remove-prefix "0001" input))
+         (input (seq--into-list (jwt--hex-string-to-bytes input)))
+         (input (seq-drop-while (lambda (x) (= ?\xFF x)) input))
+         (input (seq-drop-while (lambda (x) (= ?\x0 x)) input))
+         ;; encoded digest begins
+         (input (read-ignore ?\x30 input))
+         (input-and-rest (read-len-take input))
+         (_ (unless (not (cdr input-and-rest)) (error "Expected rest to be empty")))
+         (input (car input-and-rest))
+         ;; identifier
+         (input (read-ignore ?\x30 input))
+         (input-and-rest (read-len-take input))
+         (input (cdr input-and-rest))
+         ;; ;; null - this is included above
+         ;; (input (read-ignore ?\x05 input))
+         ;; ;; 00
+         ;; (input (cdr input))
+         (input (read-ignore ?\x04 input))
+         (input-and-rest (read-len-take input)))
+    (jwt--byte-string-to-hex (car input-and-rest))))
+
+(defun jwt-emsa-pkcs1-hash (algorithm message em-len)
+  "hash and encode"
+  (let* ((hash (secure-hash algorithm message))
+         (t nil)
+         ;; 30 31
+         ;;       30 0d ;; sequence 13
+         ;;             06 09 ;; oid 9
+         ;;                   60 86 48 01 65 03 04 02 01 ???
+         ;;             05 00 ;; null
+         ;;       04 20 ;; octet
+         ;; DigestInfo ::= SEQUENCE {
+         ;;   digestAlgorithm AlgorithmIdentifier,
+         ;;   digest OCTET STRING
+         ;; }
+         (ps (make-string (- em-len (length t) 3) ?\xFF))
+         (encoded (concat '(0 0) '(0 1) ps '(0 0) t)))
+    encoded))
+
+;; see https://datatracker.ietf.org/doc/html/rfc3447#section-8.2.2
+(defun jwt-rsa-verify (public-key object sig)
+  (let* ((sig-bytes (base64-decode-string sig 't))
+         (sig (string-to-number (jwt--byte-string-to-hex sig-bytes) 16))
+         (_ (unless (= (string-bytes sig-bytes) (/ (length (plist-get public-key :n)) 2))
+              (error "Sig length %s does not match modulus %s" (string-bytes sig-bytes) (* 2 (length (plist-get public-key :n))))))
+         (n (string-to-number (plist-get public-key :n) 16))
+         (e (string-to-number (plist-get public-key :e) 16))
+         (hash (secure-hash 'sha256 object)))
+    ;; truncate hash such that hash < n
+    ;; (while (> hash n)
+    ;;   (message "truncate hash")
+    ;;   (setf hash (math-div2 hash)))
+
+    (let* ((result (math-pow-mod sig e n)) ;; message representative this is EMSA-PKCS1 !!
+           ;; FIXME probably don't need to convert from bytes here
+           (encoded-message (jwt--byte-string-to-hex (jwt--i2osp result 256)))
+           (digest (jwt--extract-digest-from-pkcs1-hash encoded-message)))
+      ;; see https://datatracker.ietf.org/doc/html/rfc3447#section-9.2
+      (equal digest hash))))
 
 ;; ECDSASHA256
 ;; ES256
 ;; ES384
 ;; ES512
 
+;; also mentioned by Auth0h
 ;; RSAPSSSHA256
 ;; PS256
 ;; PS384
@@ -176,7 +335,6 @@ The result is a plain unibyte string, it is not base64 encoded."
                         ,@extra-headers))
          (jose-header (encode-coding-string (json-serialize jose-header) 'utf-8))
          ;; TODO add claims?
-         ;; TODO check for utf8 weirdness here
          (jwt-payload (encode-coding-string (json-serialize payload) 'utf-8))
          (content (concat (base64url-encode-string jose-header 't) "." (base64url-encode-string jwt-payload 't)))
          (signature (jwt-hs256 content key))
