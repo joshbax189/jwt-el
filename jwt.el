@@ -224,19 +224,29 @@ E.g. CCC becomes [204, 12] not [12 204]."
     encoded))
 
 ;; see https://datatracker.ietf.org/doc/html/rfc3447#section-8.2.2
-(defun jwt-rsa-verify (public-key object sig)
+(defun jwt-rsa-verify (public-key hash-algorithm object sig)
+  "Check SIG of OBJECT using RSA PUBLIC-KEY and HASH-ALGORITHM.
+
+PUBLIC-KEY must be a plist (:n modulus :e exponent).
+HASH-ALGORITHM must be one of `sha256, `sha384, or `sha512.
+OBJECT is a string, assumed to be encoded.
+SIG is a base64url encoded string."
+  (unless (seq-contains-p '(sha256 sha384 sha512)
+                          hash-algorithm)
+    (error "Unsupported hash algorithm %s" hash-algorithm))
   (let* ((sig-bytes (base64-decode-string sig 't))
          (sig (string-to-number (jwt--byte-string-to-hex sig-bytes) 16))
          (_ (unless (= (string-bytes sig-bytes) (/ (length (plist-get public-key :n)) 2))
-              (error "Sig length %s does not match modulus %s" (string-bytes sig-bytes) (* 2 (length (plist-get public-key :n))))))
+              (error "Signature length does not match key length")))
          (n (string-to-number (plist-get public-key :n) 16))
          (e (string-to-number (plist-get public-key :e) 16))
-         (hash (secure-hash 'sha256 object)))
+         (hash (secure-hash hash-algorithm object)))
     ;; truncate hash such that hash < n
     ;; (while (> hash n)
     ;;   (message "truncate hash")
     ;;   (setf hash (math-div2 hash)))
 
+    ;; FIXME: want to hide "working" message
     (let* ((result (math-pow-mod sig e n)) ;; message representative this is EMSA-PKCS1 !!
            ;; FIXME probably don't need to convert from bytes here
            (encoded-message (jwt--byte-string-to-hex (jwt--i2osp result 256)))
@@ -296,14 +306,35 @@ The result is a plain unibyte string, it is not base64 encoded."
 (defun jwt-verify-signature (token key)
   "Check the signature in TOKEN using KEY."
   (let* ((token-json (jwt-to-token-json token))
-        ;; assume hs256 to start
-         (test-signature (jwt-hs256 (concat (base64url-encode-string (encode-coding-string (jwt-token-json-header token-json) 'utf-8) 't)
-                                            "."
-                                            (base64url-encode-string (encode-coding-string (jwt-token-json-payload token-json) 'utf-8) 't))
-                                    key)))
-    (equal
-     (jwt-token-json-signature token-json)
-     test-signature)))
+         (parsed-header (json-parse-string (jwt-token-json-header token-json)))
+         (alg (map-elt parsed-header "alg"))
+         ;; TODO possibly a JWK in header
+         ;; TODO retrieve key if x5c or x5u is given
+         (token-parts (string-split token "\\."))
+         (encoded-content (string-join (seq-take token-parts 2) "."))
+         (sig (seq-elt token-parts 2)))
+    (pcase alg
+     ;; HMAC
+     ("HS256"
+      (equal
+       sig
+       (jwt-hs256 encoded-content key)))
+     ("HS384"
+      (equal
+       sig
+       (jwt-hs384 encoded-content key)))
+     ("HS512"
+      (equal
+       sig
+       (jwt-hs512 encoded-content key)))
+     ;; RSA
+     ("RS256"
+      (jwt-rsa-verify (jwt-parse-spki-rsa key) 'sha256 encoded-content sig))
+     ("RS384"
+      (jwt-rsa-verify (jwt-parse-spki-rsa key) 'sha384 encoded-content sig))
+     ("RS512"
+      (jwt-rsa-verify (jwt-parse-spki-rsa key) 'sha512 encoded-content sig))
+     (_ (error "Unkown JWT algorithm %s" alg)))))
 
 (defun jwt-decode (token)
   "Decode TOKEN and display results in a buffer."
