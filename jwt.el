@@ -75,71 +75,23 @@ E.g. CCC becomes [204, 12] not [12 204]."
       (setq idx (1- idx)))
     (reverse res)))
 
-;; HMACSHA256 -- uses shared secret/symmetric
-;; HS256
-;; HS384
-;; HS512
+(defun jwt-sha256 (str)
+  "Apply SHA256 interpreting STR as a binary string and returning a binary string."
+  (secure-hash 'sha256 (apply 'unibyte-string (string-to-list str)) nil nil 't))
 
-;; (jwt-hs256 text key) where key is a 256 bit shared secret
-(define-hmac-function
-  jwt-hs256
-  ;; FIXME: Fix deprecation warnings
-  ;;        First is because lambda is inlined as ((lambda ...) args)
-  ;;        Second could replace using (unibyte-string ...)
-  (lambda (x)
-    (secure-hash 'sha256 (string-as-unibyte x) nil nil 't)) ;; 64-char sig
-  64 ;; byte length of block size
-  32 ;; byte length of hash outputs
-  )
+(defun jwt-sha384 (str)
+  "Apply SHA384 interpreting STR as a binary string and returning a binary string."
+  (secure-hash 'sha384 (apply 'unibyte-string (string-to-list str)) nil nil 't))
 
-;; Example of alternate implementation
-;; (defun sha256 (str)
-;;   ;; This function does not compute the hash directly from the internal
-;;   ;;    representation of OBJECT's text (*note Text Representations::).
-;;   ;;    Instead, it encodes the text using a coding system (*note Coding
-;;   ;;    Systems::), and computes the hash from that encoded text.  If
-;;   ;;    OBJECT is a buffer, the coding system used is the one which would
-;;   ;;    be chosen by default for writing the text of that buffer into a
-;;   ;;    file.  If OBJECT is a string, the user's preferred coding system is
-;;   ;;    used
-;;   (secure-hash 'sha256 str nil nil 't))
+(defun jwt-sha512 (str)
+  "Apply SHA512 interpreting STR as a binary string and returning a binary string."
+  (secure-hash 'sha512 (apply 'unibyte-string (string-to-list str)) nil nil 't))
 
-;; (defun jwt-hs256 (text key)
-;;   "Compute JWT-HS256 over TEXT with KEY."
-;;   (let ((key-xor-ipad (make-vector 64 54))
-;;         (key-xor-opad (make-vector 64 92))
-;;         (len (length key))
-;;         (pos 0))
-;;     (progn
-;;       (if (> len 64)
-;;           (setq key (sha256 key)
-;;                 len 32))
-;;       (while (< pos len)
-;;         (aset key-xor-ipad pos (logxor (aref key pos) 54))
-;;         (aset key-xor-opad pos (logxor (aref key pos) 92))
-;;         (setq pos (1+ pos)))
-;;       ;; CRITICAL: must convert to unibyte-string to avoid encoding weirdness when applying sha256 hash
-;;       (setq key-xor-ipad
-;;             (sha256 (apply 'unibyte-string (seq-concatenate 'list key-xor-ipad text))))
-;;       (setq key-xor-opad
-;;             (sha256 (apply 'unibyte-string (seq-concatenate 'list key-xor-opad key-xor-ipad))))
-;;       key-xor-opad)))
+(define-hmac-function jwt-hs256 jwt-sha256 64 32)
 
-(define-hmac-function
-  jwt-hs384
-  (lambda (x)
-    (secure-hash 'sha384 (string-as-unibyte x) nil nil 't)) ;; 96-char sig
-  128 ;; byte length of block size
-  48  ;; byte length of hash outputs
-  )
+(define-hmac-function jwt-hs384 jwt-sha384 128 48)
 
-(define-hmac-function
-  jwt-hs512
-  (lambda (x)
-    (secure-hash 'sha512 (string-as-unibyte x) nil nil 't))
-  128                                  ;; byte length of block size
-  64                                   ;; byte length of hash outputs
-  )
+(define-hmac-function jwt-hs512 jwt-sha512 128 64)
 
 ;; TODO which signing methods are supported?
 ;; rest use asymmetric PKI
