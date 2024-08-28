@@ -3,7 +3,7 @@
 
 (ert-deftest jwt-create/test-1 ()
   "Matches output hs256"
-  (let* ((key (jwt-random-key 64))
+  (let* ((key (jwt--random-bytes 64))
          (payload '((sub . "1234567890") (name . "John Doe") (iat . 1516239022)))
          (token (jwt-create payload "hs256" key))
          (token-json (jwt-to-token-json token)))

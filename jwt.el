@@ -271,12 +271,12 @@ E.g. CCC becomes [204, 12] not [12 204]."
      :payload (decode-coding-string (base64-decode-string jwt-payload 't) 'utf-8)
      :signature (base64-decode-string jwt-signature 't))))
 
-(defun jwt-random-key (len)
-  "Generate random byte string of LEN chars.
+(defun jwt--random-bytes (n)
+  "Generate random byte string of N chars.
 
 The result is a plain unibyte string, it is not base64 encoded."
   (let (chars)
-    (dotimes (_ len)
+    (dotimes (_ n)
       (push (cl-random 256) chars))
     (apply #'unibyte-string chars)))
 
