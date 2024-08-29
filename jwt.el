@@ -316,15 +316,15 @@ The result is a plain unibyte string, it is not base64 encoded."
      ("HS256"
       (equal
        sig
-       (jwt-hs256 encoded-content key)))
+       (base64url-encode-string (jwt-hs256 encoded-content key) 't)))
      ("HS384"
       (equal
        sig
-       (jwt-hs384 encoded-content key)))
+       (base64url-encode-string (jwt-hs384 encoded-content key) 't)))
      ("HS512"
       (equal
        sig
-       (jwt-hs512 encoded-content key)))
+       (base64url-encode-string (jwt-hs512 encoded-content key) 't)))
      ;; RSA
      ("RS256"
       (jwt-rsa-verify (jwt-parse-spki-rsa key) 'sha256 encoded-content sig))
