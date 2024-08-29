@@ -304,7 +304,7 @@ The result is a plain unibyte string, it is not base64 encoded."
   (let* ((token-json (jwt-to-token-json token))
          (parsed-header (json-parse-string (jwt-token-json-header token-json)))
          (alg (map-elt parsed-header "alg"))
-         ;; TODO possibly a JWK in header
+         ;; TODO possibly a JWK in header -- this is insecure, don't use
          ;; TODO retrieve key if x5c or x5u is given
          (token-parts (string-split token "\\."))
          (encoded-content (string-join (seq-take token-parts 2) "."))
@@ -331,6 +331,35 @@ The result is a plain unibyte string, it is not base64 encoded."
      ("RS512"
       (jwt-rsa-verify (jwt-parse-spki-rsa key) 'sha512 encoded-content sig))
      (_ (error "Unkown JWT algorithm %s" alg)))))
+
+(defun jwt-encoded-token-p (test-string)
+  "True if TEST-STRING decodes to a JWT-like object.
+
+Specifically it should have
+- three base64url encoded parts
+- a JOSE header
+- a JSON payload with JWT claims
+- a signature."
+  (condition-case nil
+      (progn
+        (let* ((maybe-token (jwt-to-token-json test-string))
+               (jose-header (json-parse-string (jwt-token-json-header maybe-token)))
+               (payload (json-parse-string (jwt-token-json-payload maybe-token))))
+          (and
+           ;; JOSE
+           (or
+            (equal (map-elt jose-header "typ") "JWT")
+            (map-contains-key jose-header "alg"))
+           ;; payload
+           (or
+            (map-contains-key payload "iat")
+            (map-contains-key payload "exp")
+            (map-contains-key payload "iss"))
+           ;; signature
+           (jwt-token-json-signature maybe-token))
+          't))
+    (error
+     nil)))
 
 (defun jwt-decode (token)
   "Decode TOKEN and display results in a buffer."
