@@ -272,12 +272,10 @@ SIG is a base64url encoded string."
 (defun jwt-to-token-json (token)
   "Decode TOKEN as a `jwt-token-json' struct."
   (cl-destructuring-bind (jwt-header jwt-payload jwt-signature) (string-split token "\\.")
-    (unless (and jwt-header jwt-payload jwt-signature)
-      (error "JWT is missing either header, payload, or signature: %s" token))
     (make-jwt-token-json
      :header (decode-coding-string (base64-decode-string jwt-header 't) 'utf-8)
      :payload (decode-coding-string (base64-decode-string jwt-payload 't) 'utf-8)
-     :signature (base64-decode-string jwt-signature 't))))
+     :signature jwt-signature)))
 
 (defun jwt--random-bytes (n)
   "Generate random byte string of N chars.
@@ -336,17 +334,32 @@ The result is a plain unibyte string, it is not base64 encoded."
 
 (defun jwt-decode (token)
   "Decode TOKEN and display results in a buffer."
-  (interactive "M")
-  (with-current-buffer (get-buffer-create "*JWT contents*")
+  (interactive "MToken: ")
+  (cl-assert (stringp token) 't)
+  (with-current-buffer (generate-new-buffer "*JWT contents*")
     (let ((token-json (jwt-to-token-json token)))
       (insert (format "{ \"_header\": %s, \"_payload\": %s, \"_signature\": \"%s\" }"
                       (jwt-token-json-header token-json)
                       (jwt-token-json-payload token-json)
                       (jwt-token-json-signature token-json)))
+      (jsonc-mode) ;; TODO perhaps not included?
       (json-pretty-print-buffer)
       (pop-to-buffer (current-buffer)))))
 
-;; TODO jwt-decode-at-point
+(defun jwt-decode-at-point ()
+  "Decode token at point and display results in a buffer."
+  (interactive)
+  (let* ((maybe-token (sexp-at-point))
+         (maybe-token (if (symbolp maybe-token)
+                          (symbol-name maybe-token)
+                        (if (stringp maybe-token)
+                            maybe-token
+                          (error "Token must be a string"))))
+         (maybe-token (string-trim maybe-token "\"" "\""))
+         (maybe-token (string-trim maybe-token "'" "'")))
+    (unless maybe-token
+      (message "No token selected"))
+    (jwt-decode maybe-token)))
 
 (provide 'jwt)
 
