@@ -241,15 +241,13 @@ SIG is a base64url encoded string."
          (n (string-to-number (plist-get public-key :n) 16))
          (e (string-to-number (plist-get public-key :e) 16))
          (hash (secure-hash hash-algorithm object)))
-    ;; truncate hash such that hash < n
-    ;; (while (> hash n)
-    ;;   (message "truncate hash")
-    ;;   (setf hash (math-div2 hash)))
 
-    ;; FIXME: want to hide "working" message
-    (let* ((result (math-pow-mod sig e n)) ;; message representative this is EMSA-PKCS1 !!
+    (let* ((calc-display-working-message nil)
+           (message-representative (math-pow-mod sig e n)) ;; this is EMSA-PKCS1 !!
            ;; FIXME probably don't need to convert from bytes here
-           (encoded-message (jwt--byte-string-to-hex (jwt--i2osp result 256)))
+           ;; TODO explain why this is always 256.. I think it's because the block length of SHA512 is less?
+           (encoded-message (jwt--byte-string-to-hex (jwt--i2osp message-representative 256)))
+           (_ (message "EM=%s" encoded-message))
            (digest (jwt--extract-digest-from-pkcs1-hash encoded-message)))
       ;; see https://datatracker.ietf.org/doc/html/rfc3447#section-9.2
       (equal digest hash))))
