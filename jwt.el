@@ -309,18 +309,30 @@ LIFETIME-SECONDS can be used if token lifetime is specified elsewhere."
      ((and jwt-iat lifetime-seconds)
       (- (+ jwt-iat lifetime-seconds) time-seconds)))))
 
-(defun jwt-create (payload alg key &optional extra-headers)
+(defun jwt-create (payload alg key &optional extra-headers set-iat)
   "Create a JWT with the given PAYLOAD.
 
-ALG must be a string, one of HS256, HS384, HS512."
+Currently only supports signing with HMAC.
+
+ALG must be a string, one of HS256, HS384, HS512.
+KEY byte string for HMAC.
+EXTRA-HEADERS optional alist of headers to append to the JOSE header.
+SET-IAT if non-nil add an iat claim to the payload with current time."
   (let* ((jose-header `((alg . ,alg)
                         (typ . "JWT")
                         ,@extra-headers))
          (jose-header (encode-coding-string (json-serialize jose-header) 'utf-8))
-         ;; TODO add claims?
+         (payload (if set-iat
+                      (cons `(iat . ,(time-convert (current-time) 'integer)) payload)
+                    payload))
          (jwt-payload (encode-coding-string (json-serialize payload) 'utf-8))
          (content (concat (base64url-encode-string jose-header 't) "." (base64url-encode-string jwt-payload 't)))
-         (signature (jwt-hs256 content key))
+         (signing-fn (pcase (upcase alg)
+                       ("HS256" #'jwt-hs256)
+                       ("HS384" #'jwt-hs384)
+                       ("HS512" #'jwt-hs512)
+                       (_ (error "JWT signing with %s is not supported" alg))))
+         (signature (funcall signing-fn content key))
          (signature (base64url-encode-string signature 't)))
     (concat content "." signature)))
 

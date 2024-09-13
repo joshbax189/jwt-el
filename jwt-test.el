@@ -35,6 +35,28 @@
              (json-encode payload)))
     (should (jwt-verify-signature token key))))
 
+(ert-deftest jwt-create/test-iat ()
+  "Should append iat field."
+  (let* ((key (jwt--random-bytes 64))
+         (payload '((sub . "1234567890") (name . "John Doe") (iat . 1516239022)))
+         (token (jwt-create payload "hs256" key nil 't))
+         (token-json (jwt-to-token-json token)))
+    (should (map-elt (json-parse-string (jwt-token-json-payload token-json)) "iat"))))
+
+(ert-deftest jwt-create/test-hs512 ()
+  "Decoded output should match input using hs512."
+  (let* ((key (jwt--random-bytes 64))
+         (payload '((sub . "1234567890") (name . "John Doe") (iat . 1516239022)))
+         (token (jwt-create payload "hs512" key))
+         (token-json (jwt-to-token-json token)))
+    (should (equal
+             (jwt-token-json-header token-json)
+             "{\"alg\":\"hs512\",\"typ\":\"JWT\"}"))
+    (should (equal
+             (jwt-token-json-payload token-json)
+             (json-encode payload)))
+    (should (jwt-verify-signature token key))))
+
 (ert-deftest jwt-hs256/test ()
   "Should match example output."
   (let ((test-input
