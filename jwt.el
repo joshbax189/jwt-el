@@ -291,6 +291,12 @@ The result is a plain unibyte string, it is not base64 encoded."
       (push (cl-random 256) chars))
     (apply #'unibyte-string chars)))
 
+(defun jwt--normalize-string-or-token (string-or-token)
+  "Given STRING-OR-TOKEN return as a `jwt-token-json struct."
+  (if (jwt-token-json-p string-or-token)
+      string-or-token
+    (jwt-to-token-json string-or-token)))
+
 (defun jwt-token-time-until-expiry (token &optional lifetime-seconds)
   "Seconds remaining before TOKEN expires.
 
@@ -298,7 +304,8 @@ Result is negative if TOKEN is already expired, positive if still valid,
 and nil if expiry time could not be determined.
 
 LIFETIME-SECONDS can be used if token lifetime is specified elsewhere."
-  (let* ((jwt-payload (jwt-token-json-payload token))
+  (let* ((token (jwt--normalize-string-or-token token))
+         (jwt-payload (jwt-token-json-payload token))
          (jwt-payload (json-parse-string (base64-decode-string jwt-payload 't)))
          (jwt-iat (map-elt jwt-payload "iat"))
          (jwt-exp (map-elt jwt-payload "exp"))
@@ -338,7 +345,7 @@ SET-IAT if non-nil add an iat claim to the payload with current time."
 
 (defun jwt-verify-signature (token key)
   "Check the signature in TOKEN using KEY."
-  (let* ((token-json (jwt-to-token-json token))
+  (let* ((token-json (jwt--normalize-string-or-token token))
          (parsed-header (json-parse-string (jwt-token-json-header token-json)))
          (alg (upcase (map-elt parsed-header "alg")))
          ;; TODO possibly a JWK in header -- this is insecure, don't use
