@@ -207,25 +207,6 @@ Read the first byte of STR and drop that many bytes from STR."
          (input-and-rest (jwt--asn-read-len-take input)))
     (jwt--byte-string-to-hex (car input-and-rest))))
 
-;; TODO
-(defun jwt-emsa-pkcs1-hash (algorithm message em-len)
-  "hash and encode"
-  (let* ((hash (secure-hash algorithm message))
-         (t nil)
-         ;; 30 31
-         ;;       30 0d ;; sequence 13
-         ;;             06 09 ;; oid 9
-         ;;                   60 86 48 01 65 03 04 02 01 ???
-         ;;             05 00 ;; null
-         ;;       04 20 ;; octet
-         ;; DigestInfo ::= SEQUENCE {
-         ;;   digestAlgorithm AlgorithmIdentifier,
-         ;;   digest OCTET STRING
-         ;; }
-         (ps (make-string (- em-len (length t) 3) ?\xFF))
-         (encoded (concat '(0 0) '(0 1) ps '(0 0) t)))
-    encoded))
-
 ;; see https://datatracker.ietf.org/doc/html/rfc3447#section-8.2.2
 (defun jwt-rsa-verify (public-key hash-algorithm object sig)
   "Check SIG of OBJECT using RSA PUBLIC-KEY and HASH-ALGORITHM.
