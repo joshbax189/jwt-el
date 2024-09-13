@@ -304,7 +304,7 @@ The result is a plain unibyte string, it is not base64 encoded."
   "Check the signature in TOKEN using KEY."
   (let* ((token-json (jwt-to-token-json token))
          (parsed-header (json-parse-string (jwt-token-json-header token-json)))
-         (alg (map-elt parsed-header "alg"))
+         (alg (upcase (map-elt parsed-header "alg")))
          ;; TODO possibly a JWK in header -- this is insecure, don't use
          ;; TODO retrieve key if x5c or x5u is given
          (token-parts (string-split token "\\."))
