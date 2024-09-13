@@ -95,16 +95,14 @@ See: https://datatracker.ietf.org/doc/html/rfc3447#section-4.1"
 
 (define-hmac-function jwt-hs512 jwt-sha512 128 64)
 
-;; FIXME
-(defun read-forward-bytes (x)
-  (if (> x ?\x80)
-      (- x ?\x80)
-    x))
+(defun jwt--os2ip (x)
+  "Concat a list of bytes X and convert to number.
 
-;; FIXME
-(defun byte-to-num (x)
-  "Concat a list of bytes X and convert to number."
-  (string-to-number (apply 'concat (--map (format "%02x" it) x)) 16))
+OS2IP = Octal String to Int Primitive.
+See: https://datatracker.ietf.org/doc/html/rfc3447#section-4.1"
+  (string-to-number
+   (seq-mapcat (apply-partially 'format "%02x") x 'string)
+   16))
 
 (defun jwt-parse-rsa-key (rsa-key-string)
   "Extract RSA modulus and exponent from RSA-KEY-STRING.
@@ -130,8 +128,10 @@ Result is a plist (:n modulus :e exponent)."
                    ?\x30)
       (error "Unexpected prefix, not SEQ"))
     (setq bin-string (cdr bin-string))
-    (let ((fwd (read-forward-bytes (car bin-string))))
-      (setq bin-string (seq-drop bin-string (1+ fwd))))
+    ;; The len byte either literally codes the length of sequence or uses the next n bytes for the length
+    (let* ((len-byte (car bin-string))
+           (read-forward-bytes (if (> len-byte ?\x80) (- len-byte ?\x80) len-byte)))
+      (setq bin-string (seq-drop bin-string (1+ read-forward-bytes))))
     ;; INT LEN L
     (unless (equal (seq-first bin-string)
                    ?\x02)
@@ -143,7 +143,7 @@ Result is a plist (:n modulus :e exponent)."
       (if (> ?\x80 der-byte)
           (setq len der-byte)
         (let ((fwd (- der-byte ?\x80)))
-         (setq len (byte-to-num (seq-take bin-string fwd)))
+         (setq len (jwt--os2ip (seq-take bin-string fwd)))
          (setq bin-string (seq-drop bin-string fwd))))
       ;; next len bytes are the actual number
       (setq result-n (seq-drop-while (lambda (x) (= 0 x)) (seq-take bin-string len)))
@@ -159,7 +159,7 @@ Result is a plist (:n modulus :e exponent)."
       (if (> ?\x80 der-byte)
           (setq len der-byte)
         (let ((fwd (- der-byte ?\x80)))
-         (setq len (byte-to-num (seq-take bin-string fwd)))
+         (setq len (jwt--os2ip (seq-take bin-string fwd)))
          (setq bin-string (seq-drop bin-string fwd))))
       ;; next len bytes are the actual number
       (setq result-e (seq-take bin-string len))
