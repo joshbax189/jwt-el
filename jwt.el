@@ -123,6 +123,7 @@ Result is a plist (:n modulus :e exponent)."
          result-n
          result-e)
     ;; see https://en.wikipedia.org/wiki/X.690#DER_encoding
+    ;; FIXME: rewrite in the style of extract-digest-from-...
     ;; SEQ LEN L
     (unless (equal (seq-first bin-string)
                    ?\x30)
@@ -167,13 +168,19 @@ Result is a plist (:n modulus :e exponent)."
     ;; get e
     `(:n ,(jwt--byte-string-to-hex result-n) :e ,(jwt--byte-string-to-hex result-e))))
 
-(defun read-ignore (n str)
+(defun jwt--asn-read-ignore (n str)
+  "Helper for processing ASN byte string STR.
+
+Skip the first byte of STR which should be N."
   (let ((x (pop str)))
     (unless (= x n)
       (error "Expected %s got %s in %s" n x str)))
   str)
 
-(defun read-len-take (str)
+(defun jwt--asn-read-len-take (str)
+  "Helper for processing ASN byte string STR.
+
+Read the first byte of STR and drop that many bytes from STR."
   (let ((len (pop str)))
     (cons (seq-take str len) (seq-drop str len))))
 
@@ -184,22 +191,23 @@ Result is a plist (:n modulus :e exponent)."
          (input (seq-drop-while (lambda (x) (= ?\xFF x)) input))
          (input (seq-drop-while (lambda (x) (= ?\x0 x)) input))
          ;; encoded digest begins
-         (input (read-ignore ?\x30 input))
-         (input-and-rest (read-len-take input))
+         (input (jwt--asn-read-ignore ?\x30 input))
+         (input-and-rest (jwt--asn-read-len-take input))
          (_ (unless (not (cdr input-and-rest)) (error "Expected rest to be empty")))
          (input (car input-and-rest))
          ;; identifier
-         (input (read-ignore ?\x30 input))
-         (input-and-rest (read-len-take input))
+         (input (jwt--asn-read-ignore ?\x30 input))
+         (input-and-rest (jwt--asn-read-len-take input))
          (input (cdr input-and-rest))
          ;; ;; null - this is included above
-         ;; (input (read-ignore ?\x05 input))
+         ;; (input (jwt--asn-read-ignore ?\x05 input))
          ;; ;; 00
          ;; (input (cdr input))
-         (input (read-ignore ?\x04 input))
-         (input-and-rest (read-len-take input)))
+         (input (jwt--asn-read-ignore ?\x04 input))
+         (input-and-rest (jwt--asn-read-len-take input)))
     (jwt--byte-string-to-hex (car input-and-rest))))
 
+;; TODO
 (defun jwt-emsa-pkcs1-hash (algorithm message em-len)
   "hash and encode"
   (let* ((hash (secure-hash algorithm message))
