@@ -221,6 +221,4 @@ mwIDAQAB
 -----END PUBLIC KEY-----"))
     (should (jwt-verify-signature token key))))
 
-(provide 'jwt-test)
-
 ;;; jwt-test.el ends here
