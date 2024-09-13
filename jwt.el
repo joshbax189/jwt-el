@@ -61,7 +61,10 @@ E.g. CCC becomes [204, 12] not [12 204]."
     (apply #'concat (reverse res))))
 
 (defun jwt--i2osp (x x-len)
-  "Encode number X as an X-LEN long list of bytes."
+  "Encode number X as an X-LEN long list of bytes.
+
+I2OSP = Int to Octal String Primitive.
+See: https://datatracker.ietf.org/doc/html/rfc3447#section-4.1"
   (when (> x (expt 256 x-len))
     (error "Integer too large"))
   (let (res
@@ -91,23 +94,6 @@ E.g. CCC becomes [204, 12] not [12 204]."
 (define-hmac-function jwt-hs384 jwt-sha384 128 48)
 
 (define-hmac-function jwt-hs512 jwt-sha512 128 64)
-
-;; TODO which signing methods are supported?
-;; rest use asymmetric PKI
-;; this is the recommended one
-;; RSASHA256
-;; RS256
-;; RS384
-;; RS512
-
-;; so sha the JSON, then sign, perhaps with epg?
-;; probably only if you want to sign your own?
-;; more flexible if you just take a public key string?
-
-;; (let ((context (epg-make-context 'OpenPGP)))
-;;   (decode-coding-string
-;;    (epg-decrypt-string context (string-as-unibyte (base64-decode-string "Eci61G6w4zh_u9oOCk_v1M_sKcgk0svOmW4ZsL-rt4ojGUH2QY110bQTYNwbEVlowW7phCg7vluX_MCKVwJkxJT6tMk2Ij3Plad96Jf2G2mMsKbxkC-prvjvQkBFYWrYnKWClPBRCyIcG0dVfBvqZ8Mro3t5bX59IKwQ3WZ7AtGBYz5BSiBlrKkp6J1UmP_bFV3eEzIHEFgzRa3pbr4ol4TK6SnAoF88rLr2NhEz9vpdHglUMlOBQiqcZwqrI-Z4XDyDzvnrpujIToiepq9bCimPgVkP54VoZzy-mMSGbthYpLqsL_4MQXaI1Uf_wKFAUuAtzVn4-ebgsKOpvKNzVA" 't)))
-;;     'utf-8))
 
 ;; FIXME
 (defun read-forward-bytes (x)
@@ -261,12 +247,13 @@ SIG is a base64url encoded string."
       ;; see https://datatracker.ietf.org/doc/html/rfc3447#section-9.2
       (equal digest hash))))
 
+;; TODO
 ;; ECDSASHA256
 ;; ES256
 ;; ES384
 ;; ES512
 
-;; also mentioned by Auth0h
+;; also mentioned by Auth0
 ;; RSAPSSSHA256
 ;; PS256
 ;; PS384
@@ -280,6 +267,7 @@ SIG is a base64url encoded string."
 
 (defun jwt-to-token-json (token)
   "Decode TOKEN as a `jwt-token-json' struct."
+  ;; TODO when a part is missing, get "wrong number of arguments" -- should be more specific
   (cl-destructuring-bind (jwt-header jwt-payload jwt-signature) (string-split token "\\.")
     (make-jwt-token-json
      :header (decode-coding-string (base64-decode-string jwt-header 't) 'utf-8)
@@ -314,7 +302,9 @@ LIFETIME-SECONDS can be used if token lifetime is specified elsewhere."
       (- (+ jwt-iat lifetime-seconds) time-seconds)))))
 
 (defun jwt-create (payload alg key &optional extra-headers)
-  "Create a JWT with the given PAYLOAD."
+  "Create a JWT with the given PAYLOAD.
+
+ALG must be a string, one of HS256, HS384, HS512."
   (let* ((jose-header `((alg . ,alg)
                         (typ . "JWT")
                         ,@extra-headers))
