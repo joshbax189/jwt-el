@@ -273,6 +273,14 @@ SIG is a base64url encoded string."
   payload
   signature)
 
+(defun jwt-token-json-header-parsed (token)
+  "Get the header slot of TOKEN as a Lisp object."
+  (json-parse-string (jwt-token-json-header token)))
+
+(defun jwt-token-json-payload-parsed (token)
+  "Get the payload slot of TOKEN as a Lisp object."
+  (json-parse-string (jwt-token-json-payload token)))
+
 (defun jwt-to-token-json (token)
   "Decode TOKEN as a `jwt-token-json' struct."
   ;; TODO when a part is missing, get "wrong number of arguments" -- should be more specific
@@ -305,8 +313,7 @@ and nil if expiry time could not be determined.
 
 LIFETIME-SECONDS can be used if token lifetime is specified elsewhere."
   (let* ((token (jwt--normalize-string-or-token token))
-         (jwt-payload (jwt-token-json-payload token))
-         (jwt-payload (json-parse-string (base64-decode-string jwt-payload 't)))
+         (jwt-payload (jwt-token-json-payload-parsed token))
          (jwt-iat (map-elt jwt-payload "iat"))
          (jwt-exp (map-elt jwt-payload "exp"))
          (time-seconds (time-convert (current-time) 'integer)))
@@ -346,7 +353,7 @@ SET-IAT if non-nil add an iat claim to the payload with current time."
 (defun jwt-verify-signature (token key)
   "Check the signature in TOKEN using KEY."
   (let* ((token-json (jwt--normalize-string-or-token token))
-         (parsed-header (json-parse-string (jwt-token-json-header token-json)))
+         (parsed-header (jwt-token-json-header-parsed token-json))
          (alg (upcase (map-elt parsed-header "alg")))
          ;; TODO possibly a JWK in header -- this is insecure, don't use
          ;; TODO retrieve key if x5c or x5u is given
@@ -387,8 +394,8 @@ Specifically it should have
   (condition-case nil
       (progn
         (let* ((maybe-token (jwt-to-token-json test-string))
-               (jose-header (json-parse-string (jwt-token-json-header maybe-token)))
-               (payload (json-parse-string (jwt-token-json-payload maybe-token))))
+               (jose-header (jwt-token-json-header-parsed maybe-token))
+               (payload (jwt-token-json-payload-parsed maybe-token)))
           (and
            ;; JOSE
            (or
