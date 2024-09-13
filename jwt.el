@@ -285,6 +285,24 @@ The result is a plain unibyte string, it is not base64 encoded."
       (push (cl-random 256) chars))
     (apply #'unibyte-string chars)))
 
+(defun jwt-token-time-until-expiry (token &optional lifetime-seconds)
+  "Seconds remaining before TOKEN expires.
+
+Result is negative if TOKEN is already expired, positive if still valid,
+and nil if expiry time could not be determined.
+
+LIFETIME-SECONDS can be used if token lifetime is specified elsewhere."
+  (let* ((jwt-payload (jwt-token-json-payload token))
+         (jwt-payload (json-parse-string (base64-decode-string jwt-payload 't)))
+         (jwt-iat (map-elt jwt-payload "iat"))
+         (jwt-exp (map-elt jwt-payload "exp"))
+         (time-seconds (time-convert (current-time) 'integer)))
+    (cond
+     (jwt-exp
+      (- jwt-exp time-seconds))
+     ((and jwt-iat lifetime-seconds)
+      (- (+ jwt-iat lifetime-seconds) time-seconds)))))
+
 (defun jwt-create (payload alg key &optional extra-headers)
   "Create a JWT with the given PAYLOAD."
   (let* ((jose-header `((alg . ,alg)
