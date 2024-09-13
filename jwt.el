@@ -109,65 +109,75 @@ E.g. CCC becomes [204, 12] not [12 204]."
 ;;    (epg-decrypt-string context (string-as-unibyte (base64-decode-string "Eci61G6w4zh_u9oOCk_v1M_sKcgk0svOmW4ZsL-rt4ojGUH2QY110bQTYNwbEVlowW7phCg7vluX_MCKVwJkxJT6tMk2Ij3Plad96Jf2G2mMsKbxkC-prvjvQkBFYWrYnKWClPBRCyIcG0dVfBvqZ8Mro3t5bX59IKwQ3WZ7AtGBYz5BSiBlrKkp6J1UmP_bFV3eEzIHEFgzRa3pbr4ol4TK6SnAoF88rLr2NhEz9vpdHglUMlOBQiqcZwqrI-Z4XDyDzvnrpujIToiepq9bCimPgVkP54VoZzy-mMSGbthYpLqsL_4MQXaI1Uf_wKFAUuAtzVn4-ebgsKOpvKNzVA" 't)))
 ;;     'utf-8))
 
+;; FIXME
 (defun read-forward-bytes (x)
   (if (> x ?\x80)
       (- x ?\x80)
     x))
 
+;; FIXME
 (defun byte-to-num (x)
   "Concat a list of bytes X and convert to number."
   (string-to-number (apply 'concat (--map (format "%02x" it) x)) 16))
 
-;; see https://en.wikipedia.org/wiki/X.690#DER_encoding
-(defun jwt-parse-spki-rsa (spki-string)
-  "foo"
-  (setq spki-string (string-remove-prefix "-----BEGIN PUBLIC KEY-----"
-                                          (string-remove-suffix "-----END PUBLIC KEY-----"
-                                                                (string-trim spki-string))))
-  (let* ((spki-bin-string (string-to-list (base64-decode-string spki-string)))
-         ;; drop first 24 bytes
-         (spki-bin-string (seq-drop spki-bin-string 24))
+(defun jwt-parse-rsa-key (rsa-key-string)
+  "Extract RSA modulus and exponent from RSA-KEY-STRING.
+
+This may be either SPKI formatted with prefix BEGIN PUBLIC KEY,
+or RSA formatted with prefix BEGIN RSA PUBLIC KEY.
+
+Result is a plist (:n modulus :e exponent)."
+  (setq rsa-key-string (string-remove-prefix "-----BEGIN RSA PUBLIC KEY-----"
+                                             (string-remove-suffix "-----END RSA PUBLIC KEY-----"
+                                                                   (string-trim rsa-key-string))))
+  (let* ((is-spki (string-prefix-p "-----BEGIN PUBLIC KEY-----" rsa-key-string))
+         (rsa-key-string (string-trim rsa-key-string "-----BEGIN \\(RSA \\)?PUBLIC KEY-----" "-----END \\(RSA \\)?PUBLIC KEY-----"))
+         (rsa-key-string (string-trim rsa-key-string))
+         (bin-string (string-to-list (base64-decode-string rsa-key-string)))
+         ;; drop 24 byte preamble if SPKI format
+         (bin-string (if is-spki (seq-drop bin-string 24) bin-string))
          result-n
          result-e)
+    ;; see https://en.wikipedia.org/wiki/X.690#DER_encoding
     ;; SEQ LEN L
-    (unless (equal (seq-first spki-bin-string)
+    (unless (equal (seq-first bin-string)
                    ?\x30)
       (error "Unexpected prefix, not SEQ"))
-    (setq spki-bin-string (cdr spki-bin-string))
-    (let ((fwd (read-forward-bytes (car spki-bin-string))))
-      (setq spki-bin-string (seq-drop spki-bin-string (1+ fwd))))
+    (setq bin-string (cdr bin-string))
+    (let ((fwd (read-forward-bytes (car bin-string))))
+      (setq bin-string (seq-drop bin-string (1+ fwd))))
     ;; INT LEN L
-    (unless (equal (seq-first spki-bin-string)
+    (unless (equal (seq-first bin-string)
                    ?\x02)
-      (error "Unexpected prefix %s, not INT 1" (seq-first spki-bin-string)))
-    (setq spki-bin-string (cdr spki-bin-string))
-    (let* ((der-byte (car spki-bin-string))
-           (_ (setq spki-bin-string (cdr spki-bin-string)))
+      (error "Unexpected prefix %s, not INT 1" (seq-first bin-string)))
+    (setq bin-string (cdr bin-string))
+    (let* ((der-byte (car bin-string))
+           (_ (setq bin-string (cdr bin-string)))
            len)
       (if (> ?\x80 der-byte)
           (setq len der-byte)
         (let ((fwd (- der-byte ?\x80)))
-         (setq len (byte-to-num (seq-take spki-bin-string fwd)))
-         (setq spki-bin-string (seq-drop spki-bin-string fwd))))
+         (setq len (byte-to-num (seq-take bin-string fwd)))
+         (setq bin-string (seq-drop bin-string fwd))))
       ;; next len bytes are the actual number
-      (setq result-n (seq-drop-while (lambda (x) (= 0 x)) (seq-take spki-bin-string len)))
-      (setq spki-bin-string (seq-drop spki-bin-string len)))
+      (setq result-n (seq-drop-while (lambda (x) (= 0 x)) (seq-take bin-string len)))
+      (setq bin-string (seq-drop bin-string len)))
     ;; INT LEN L
-    (unless (equal (seq-first spki-bin-string)
+    (unless (equal (seq-first bin-string)
                    ?\x02)
-      (error "Unexpected prefix %s, not INT 2" (seq-first spki-bin-string)))
-    (setq spki-bin-string (cdr spki-bin-string))
-    (let* ((der-byte (car spki-bin-string))
-           (_ (setq spki-bin-string (cdr spki-bin-string)))
+      (error "Unexpected prefix %s, not INT 2" (seq-first bin-string)))
+    (setq bin-string (cdr bin-string))
+    (let* ((der-byte (car bin-string))
+           (_ (setq bin-string (cdr bin-string)))
            len)
       (if (> ?\x80 der-byte)
           (setq len der-byte)
         (let ((fwd (- der-byte ?\x80)))
-         (setq len (byte-to-num (seq-take spki-bin-string fwd)))
-         (setq spki-bin-string (seq-drop spki-bin-string fwd))))
+         (setq len (byte-to-num (seq-take bin-string fwd)))
+         (setq bin-string (seq-drop bin-string fwd))))
       ;; next len bytes are the actual number
-      (setq result-e (seq-take spki-bin-string len))
-      (setq spki-bin-string (seq-drop spki-bin-string len)))
+      (setq result-e (seq-take bin-string len))
+      (setq bin-string (seq-drop bin-string len)))
     ;; get e
     `(:n ,(jwt--byte-string-to-hex result-n) :e ,(jwt--byte-string-to-hex result-e))))
 
@@ -342,11 +352,11 @@ LIFETIME-SECONDS can be used if token lifetime is specified elsewhere."
        (base64url-encode-string (jwt-hs512 encoded-content key) 't)))
      ;; RSA
      ("RS256"
-      (jwt-rsa-verify (jwt-parse-spki-rsa key) 'sha256 encoded-content sig))
+      (jwt-rsa-verify (jwt-parse-rsa-key key) 'sha256 encoded-content sig))
      ("RS384"
-      (jwt-rsa-verify (jwt-parse-spki-rsa key) 'sha384 encoded-content sig))
+      (jwt-rsa-verify (jwt-parse-rsa-key key) 'sha384 encoded-content sig))
      ("RS512"
-      (jwt-rsa-verify (jwt-parse-spki-rsa key) 'sha512 encoded-content sig))
+      (jwt-rsa-verify (jwt-parse-rsa-key key) 'sha512 encoded-content sig))
      (_ (error "Unkown JWT algorithm %s" alg)))))
 
 (defun jwt-encoded-token-p (test-string)
