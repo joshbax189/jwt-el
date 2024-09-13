@@ -35,6 +35,7 @@
 (require 'json)
 (require 'cl-lib)
 (require 'hmac-def)
+(require 'calc-arith)
 
 (defun jwt--hex-string-to-bytes (hex &optional left-align)
   "Convert a hex string HEX to a byte string.
