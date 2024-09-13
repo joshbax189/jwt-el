@@ -405,6 +405,7 @@ Specifically it should have
     (error
      nil)))
 
+;;;###autoload
 (defun jwt-decode (token)
   "Decode TOKEN and display results in a buffer."
   (interactive "MToken: ")
@@ -421,6 +422,7 @@ Specifically it should have
       (jwt-minor-mode)
       (pop-to-buffer (current-buffer)))))
 
+;;;###autoload
 (defun jwt-decode-at-point ()
   "Decode token at point and display results in a buffer."
   (interactive)
