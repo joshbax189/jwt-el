@@ -79,15 +79,15 @@ See: https://datatracker.ietf.org/doc/html/rfc3447#section-4.1"
 
 (defun jwt-sha256 (str)
   "Apply SHA256 interpreting STR as a binary string and returning a binary string."
-  (secure-hash 'sha256 (apply 'unibyte-string (string-to-list str)) nil nil 't))
+  (secure-hash 'sha256 (apply #'unibyte-string (string-to-list str)) nil nil 't))
 
 (defun jwt-sha384 (str)
   "Apply SHA384 interpreting STR as a binary string and returning a binary string."
-  (secure-hash 'sha384 (apply 'unibyte-string (string-to-list str)) nil nil 't))
+  (secure-hash 'sha384 (apply #'unibyte-string (string-to-list str)) nil nil 't))
 
 (defun jwt-sha512 (str)
   "Apply SHA512 interpreting STR as a binary string and returning a binary string."
-  (secure-hash 'sha512 (apply 'unibyte-string (string-to-list str)) nil nil 't))
+  (secure-hash 'sha512 (apply #'unibyte-string (string-to-list str)) nil nil 't))
 
 (define-hmac-function jwt-hs256 jwt-sha256 64 32)
 
@@ -101,7 +101,7 @@ See: https://datatracker.ietf.org/doc/html/rfc3447#section-4.1"
 OS2IP = Octal String to Int Primitive.
 See: https://datatracker.ietf.org/doc/html/rfc3447#section-4.1"
   (string-to-number
-   (seq-mapcat (apply-partially 'format "%02x") x 'string)
+   (seq-mapcat (apply-partially #'format "%02x") x 'string)
    16))
 
 (defun jwt-parse-rsa-key (rsa-key-string)
