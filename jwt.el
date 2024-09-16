@@ -249,12 +249,16 @@ SIG is a base64url encoded string."
 
 (defun jwt-to-token-json (token)
   "Decode TOKEN as a `jwt-token-json' struct."
-  ;; TODO when a part is missing, get "wrong number of arguments" -- should be more specific
-  (cl-destructuring-bind (jwt-header jwt-payload jwt-signature) (string-split token "\\.")
-    (make-jwt-token-json
-     :header (decode-coding-string (base64-decode-string jwt-header 't) 'utf-8)
-     :payload (decode-coding-string (base64-decode-string jwt-payload 't) 'utf-8)
-     :signature jwt-signature)))
+  (condition-case err
+   (cl-destructuring-bind (jwt-header jwt-payload jwt-signature) (string-split token "\\.")
+     (make-jwt-token-json
+      :header (decode-coding-string (base64-decode-string jwt-header 't) 'utf-8)
+      :payload (decode-coding-string (base64-decode-string jwt-payload 't) 'utf-8)
+      :signature jwt-signature))
+   (wrong-number-of-arguments
+    (error (format "Invalid JWT: %s\nexpected 3 parts" token)))
+   (error
+    (error (format "Invalid JWT: %s\nreason: %s" token (cdr err))))))
 
 (defun jwt--random-bytes (n)
   "Generate random byte string of N chars.
