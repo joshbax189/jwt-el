@@ -231,22 +231,9 @@ SIG is a base64url encoded string."
            ;; FIXME probably don't need to convert from bytes here
            ;; TODO explain why this is always 256.. I think it's because the block length of SHA512 is less?
            (encoded-message (jwt--byte-string-to-hex (jwt--i2osp message-representative 256)))
-           (_ (message "EM=%s" encoded-message))
            (digest (jwt--extract-digest-from-pkcs1-hash encoded-message)))
       ;; see https://datatracker.ietf.org/doc/html/rfc3447#section-9.2
       (equal digest hash))))
-
-;; TODO
-;; ECDSASHA256
-;; ES256
-;; ES384
-;; ES512
-
-;; also mentioned by Auth0
-;; RSAPSSSHA256
-;; PS256
-;; PS384
-;; PS512
 
 (cl-defstruct jwt-token-json
   "A JWT decoded into JSON strings."
@@ -336,8 +323,6 @@ SET-IAT if non-nil add an iat claim to the payload with current time."
   (let* ((token-json (jwt--normalize-string-or-token token))
          (parsed-header (jwt-token-json-header-parsed token-json))
          (alg (upcase (map-elt parsed-header "alg")))
-         ;; TODO possibly a JWK in header -- this is insecure, don't use
-         ;; TODO retrieve key if x5c or x5u is given
          (token-parts (string-split token "\\."))
          (encoded-content (string-join (seq-take token-parts 2) "."))
          (sig (seq-elt token-parts 2)))
