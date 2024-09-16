@@ -104,6 +104,35 @@ See: https://datatracker.ietf.org/doc/html/rfc3447#section-4.1"
    (seq-mapcat (apply-partially #'format "%02x") x 'string)
    16))
 
+(defun jwt--asn-read-ignore (n str)
+  "Helper for processing ASN byte string STR.
+
+Skip the first byte of STR which should be N."
+  (let ((x (pop str)))
+    (unless (= x n)
+      (error "Expected %s got %s in %s" n x str)))
+  str)
+
+(defun jwt--asn-split-using-len (str)
+  "Helper for processing ASN byte string STR.
+
+Assuming first byte of STR is a DER LEN byte, return a cons cell like
+`(x . y)' where x is a string with length given by that byte or sequence
+and y is the remainder.
+
+See https://en.wikipedia.org/wiki/X.690#DER_encoding"
+(let* ((der-byte (pop str))
+       len)
+  (if (> ?\x80 der-byte)
+      (setq len der-byte)
+    ;; TODO if exactly 80, then read until 00 00
+    (let ((fwd (- der-byte ?\x80)))
+      (setq len (jwt--os2ip (take fwd str)))
+      (setq str (nthcdr fwd str))))
+  ;; next len bytes are the actual number
+  (cons (take len str)
+        (nthcdr len str))))
+
 (defun jwt-parse-rsa-key (rsa-key-string)
   "Extract RSA modulus and exponent from RSA-KEY-STRING.
 
@@ -119,91 +148,57 @@ Result is a plist (:n modulus :e exponent)."
          (rsa-key-string (string-trim rsa-key-string))
          (bin-string (string-to-list (base64-decode-string rsa-key-string)))
          ;; drop 24 byte preamble if SPKI format
+         ;; TODO ECC keys have a different OID in this preamble
          (bin-string (if is-spki (seq-drop bin-string 24) bin-string))
          result-n
          result-e)
-    ;; see https://en.wikipedia.org/wiki/X.690#DER_encoding
-    ;; FIXME: rewrite in the style of extract-digest-from-...
+
     ;; SEQ LEN L
-    (unless (equal (seq-first bin-string)
-                   ?\x30)
-      (error "Unexpected prefix, not SEQ"))
-    (setq bin-string (cdr bin-string))
-    ;; The len byte either literally codes the length of sequence or uses the next n bytes for the length
-    (let* ((len-byte (car bin-string))
-           (read-forward-bytes (if (> len-byte ?\x80) (- len-byte ?\x80) len-byte)))
-      (setq bin-string (seq-drop bin-string (1+ read-forward-bytes))))
+    (setq bin-string (jwt--asn-read-ignore ?\x30 bin-string))
+    (cl-destructuring-bind (seq-content . bin-string-remainder) (jwt--asn-split-using-len bin-string)
+      (when bin-string-remainder
+        (warn "Expected entire ASN sequence to be key"))
+      (setq bin-string seq-content))
+
+    ;; n
     ;; INT LEN L
-    (unless (equal (seq-first bin-string)
-                   ?\x02)
-      (error "Unexpected prefix %s, not INT 1" (seq-first bin-string)))
-    (setq bin-string (cdr bin-string))
-    (let* ((der-byte (car bin-string))
-           (_ (setq bin-string (cdr bin-string)))
-           len)
-      (if (> ?\x80 der-byte)
-          (setq len der-byte)
-        (let ((fwd (- der-byte ?\x80)))
-         (setq len (jwt--os2ip (seq-take bin-string fwd)))
-         (setq bin-string (seq-drop bin-string fwd))))
-      ;; next len bytes are the actual number
-      (setq result-n (seq-drop-while (lambda (x) (= 0 x)) (seq-take bin-string len)))
-      (setq bin-string (seq-drop bin-string len)))
+    (setq bin-string (jwt--asn-read-ignore ?\x02 bin-string))
+    (cl-destructuring-bind (int-content . bin-string-remainder) (jwt--asn-split-using-len bin-string)
+      (setq result-n (seq-drop-while #'zerop int-content))
+      (setq bin-string bin-string-remainder))
+
+    ;; e
     ;; INT LEN L
-    (unless (equal (seq-first bin-string)
-                   ?\x02)
-      (error "Unexpected prefix %s, not INT 2" (seq-first bin-string)))
-    (setq bin-string (cdr bin-string))
-    (let* ((der-byte (car bin-string))
-           (_ (setq bin-string (cdr bin-string)))
-           len)
-      (if (> ?\x80 der-byte)
-          (setq len der-byte)
-        (let ((fwd (- der-byte ?\x80)))
-         (setq len (jwt--os2ip (seq-take bin-string fwd)))
-         (setq bin-string (seq-drop bin-string fwd))))
-      ;; next len bytes are the actual number
-      (setq result-e (seq-take bin-string len))
-      (setq bin-string (seq-drop bin-string len)))
-    ;; get e
+    (setq bin-string (jwt--asn-read-ignore ?\x02 bin-string))
+    (cl-destructuring-bind (int-content . bin-string-remainder) (jwt--asn-split-using-len bin-string)
+      (setq result-e (seq-drop-while #'zerop int-content))
+      (setq bin-string bin-string-remainder))
+
+    (when bin-string
+      (warn "ASN sequence was not empty after processing key parts"))
+
     `(:n ,(jwt--byte-string-to-hex result-n) :e ,(jwt--byte-string-to-hex result-e))))
-
-(defun jwt--asn-read-ignore (n str)
-  "Helper for processing ASN byte string STR.
-
-Skip the first byte of STR which should be N."
-  (let ((x (pop str)))
-    (unless (= x n)
-      (error "Expected %s got %s in %s" n x str)))
-  str)
-
-(defun jwt--asn-read-len-take (str)
-  "Helper for processing ASN byte string STR.
-
-Read the first byte of STR and drop that many bytes from STR."
-  (let ((len (pop str)))
-    (cons (seq-take str len) (seq-drop str len))))
 
 (defun jwt--extract-digest-from-pkcs1-hash (input)
   "Return hash digest (as hex) from INPUT (list of bytes)."
   (let* ((input (seq-drop input 2)) ;; always 00 01
-         (input (seq-drop-while (lambda (x) (= ?\xFF x)) input))
-         (input (seq-drop-while (lambda (x) (= ?\x0 x)) input))
+         (input (seq-drop-while (apply-partially '= ?\xFF) input))
+         (input (seq-drop-while #'zerop input))
          ;; encoded digest begins
          (input (jwt--asn-read-ignore ?\x30 input))
-         (input-and-rest (jwt--asn-read-len-take input))
+         (input-and-rest (jwt--asn-split-using-len input))
          (_ (unless (not (cdr input-and-rest)) (error "Expected rest to be empty")))
          (input (car input-and-rest))
          ;; identifier
          (input (jwt--asn-read-ignore ?\x30 input))
-         (input-and-rest (jwt--asn-read-len-take input))
+         (input-and-rest (jwt--asn-split-using-len input))
          (input (cdr input-and-rest))
          ;; ;; null - this is included above
          ;; (input (jwt--asn-read-ignore ?\x05 input))
          ;; ;; 00
          ;; (input (cdr input))
          (input (jwt--asn-read-ignore ?\x04 input))
-         (input-and-rest (jwt--asn-read-len-take input)))
+         (input-and-rest (jwt--asn-split-using-len input)))
     (jwt--byte-string-to-hex (car input-and-rest))))
 
 ;; see https://datatracker.ietf.org/doc/html/rfc3447#section-8.2.2
