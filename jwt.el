@@ -393,6 +393,9 @@ Specifically it should have
     (error
      nil)))
 
+(defvar jwt-local-token nil "Buffer token string when in a JWT buffer.")
+(make-variable-buffer-local 'jwt-local-token)
+
 ;;;###autoload
 (defun jwt-decode (token)
   "Decode TOKEN and display results in a buffer."
@@ -407,6 +410,8 @@ Specifically it should have
       ;; (jsonc-mode) ;; not included -- is it worth including?
       (js-json-mode)
       (json-pretty-print-buffer)
+      (setq jwt-local-token token
+            buffer-read-only 't)
       (jwt-minor-mode)
       (pop-to-buffer (current-buffer)))))
 
@@ -414,6 +419,7 @@ Specifically it should have
 (defun jwt-decode-at-point ()
   "Decode token at point and display results in a buffer."
   (interactive)
+  ;; FIXME: depending on the mode sexp-at-point may miss parts of the token
   (let* ((maybe-token (sexp-at-point))
          (maybe-token (if (symbolp maybe-token)
                           (symbol-name maybe-token)
@@ -425,6 +431,18 @@ Specifically it should have
     (unless maybe-token
       (message "No token selected"))
     (jwt-decode maybe-token)))
+
+(defun jwt-verify-current-token (key)
+  "Verfiy the currently displayed token using KEY."
+  (interactive "Mkey: ")
+  (unless jwt-local-token
+    (error "No token found to verify"))
+  (unless (string-prefix-p "-----" key)
+    (message "Assuming base64 encoded HMAC key")
+    (setq key (base64-decode-string key)))
+  (if (jwt-verify-signature jwt-local-token key)
+      (message "Token signature OK")
+    (message "Token signature INVALID")))
 
 (defvar jwt--defined-claims-alist
   '(;; registered claim names
@@ -454,8 +472,10 @@ Specifically it should have
     (funcall callback doco :thing full-name)))
 
 (define-minor-mode jwt-minor-mode
-  "Used to display decoded contents of JWTs."
+  "Display decoded contents of JWTs."
   :interactive nil
+  :keymap (define-keymap
+            "C-c C-c" #'jwt-verify-current-token)
   :lighter " JWT-decoded"
   (add-hook 'eldoc-documentation-functions #'jwt--eldoc nil t)
   (eldoc-mode))
