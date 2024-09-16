@@ -185,9 +185,8 @@ Read the first byte of STR and drop that many bytes from STR."
     (cons (seq-take str len) (seq-drop str len))))
 
 (defun jwt--extract-digest-from-pkcs1-hash (input)
-  "Return hash digest (as hex) from INPUT (hex)."
-  (let* ((input (string-remove-prefix "0001" input))
-         (input (seq--into-list (jwt--hex-string-to-bytes input)))
+  "Return hash digest (as hex) from INPUT (list of bytes)."
+  (let* ((input (seq-drop input 2)) ;; always 00 01
          (input (seq-drop-while (lambda (x) (= ?\xFF x)) input))
          (input (seq-drop-while (lambda (x) (= ?\x0 x)) input))
          ;; encoded digest begins
@@ -227,10 +226,9 @@ SIG is a base64url encoded string."
          (hash (secure-hash hash-algorithm object)))
 
     (let* ((calc-display-working-message nil)
-           (message-representative (math-pow-mod sig e n)) ;; this is EMSA-PKCS1 !!
-           ;; FIXME probably don't need to convert from bytes here
-           ;; TODO explain why this is always 256.. I think it's because the block length of SHA512 is less?
-           (encoded-message (jwt--byte-string-to-hex (jwt--i2osp message-representative 256)))
+           ;; this is EMSA-PKCS1, so it has extra metadata wrapping the hash
+           (message-representative (math-pow-mod sig e n))
+           (encoded-message (jwt--i2osp message-representative 256))
            (digest (jwt--extract-digest-from-pkcs1-hash encoded-message)))
       ;; see https://datatracker.ietf.org/doc/html/rfc3447#section-9.2
       (equal digest hash))))
