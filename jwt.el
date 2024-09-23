@@ -349,27 +349,25 @@ SET-IAT if non-nil add an iat claim to the payload with current time."
 (defun jwt-encoded-token-p (test-string)
   "True if TEST-STRING decodes to a JWT-like object.
 
-Specifically it should have
-- three base64url encoded parts
-- a JOSE header
-- a JSON payload with JWT claims
-- a signature."
+This does not check every aspect of RFC7519 (JWT) and RFC7515 (JWS)
+compliance.
+
+Specifically it checks that TEST-STRING has
+- three base64url encoded JSON parts
+- a JOSE header with alg claim"
   (ignore-errors
     (let* ((maybe-token (jwt-to-token-json test-string))
            (jose-header (jwt-token-json-header-parsed maybe-token))
-           (payload (jwt-token-json-payload-parsed maybe-token)))
+           (payload (jwt-token-json-payload-parsed maybe-token))
+           (signature (jwt-token-json-signature maybe-token)))
       (and
-       ;; JOSE
-       (or
-        (equal (map-elt jose-header "typ") "JWT")
-        (map-contains-key jose-header "alg"))
-       ;; payload
-       (or
-        (map-contains-key payload "iat")
-        (map-contains-key payload "exp")
-        (map-contains-key payload "iss"))
-       ;; signature
-       (jwt-token-json-signature maybe-token)))))
+       ;; Only mandatory JOSE claim
+       (map-contains-key jose-header "alg")
+       ;; All payload claims are optional, so just check that it parses
+       payload
+       ;; Signature is allowed to be "" for unsecured tokens
+       signature
+       't))))
 
 (defvar jwt-local-token nil "Buffer token string when in a JWT buffer.")
 (make-variable-buffer-local 'jwt-local-token)
