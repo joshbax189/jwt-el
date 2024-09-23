@@ -182,12 +182,12 @@ Result is a plist (:n modulus :e exponent)."
 (defun jwt--extract-digest-from-pkcs1-hash (input)
   "Return hash digest (as hex) from INPUT (list of bytes)."
   (let* ((input (seq-drop input 2)) ;; always 00 01
-         (input (seq-drop-while (apply-partially '= ?\xFF) input))
+         (input (seq-drop-while (apply-partially #'= ?\xFF) input))
          (input (seq-drop-while #'zerop input))
          ;; encoded digest begins
          (input (jwt--asn-read-ignore ?\x30 input))
          (input-and-rest (jwt--asn-split-using-len input))
-         (_ (unless (not (cdr input-and-rest)) (error "Expected rest to be empty")))
+         (_ (when (cdr input-and-rest) (error "Expected rest to be empty")))
          (input (car input-and-rest))
          ;; identifier
          (input (jwt--asn-read-ignore ?\x30 input))
@@ -251,9 +251,9 @@ SIG is a base64url encoded string."
       :payload (decode-coding-string (base64-decode-string jwt-payload 't) 'utf-8)
       :signature jwt-signature))
    (wrong-number-of-arguments
-    (error (format "Invalid JWT: %s\nexpected 3 parts" token)))
+    (error "Invalid JWT: %s\nexpected 3 parts" token))
    (error
-    (error (format "Invalid JWT: %s\nreason: %s" token (cdr err))))))
+    (error "Invalid JWT: %s\nreason: %s" token (cdr err)))))
 
 (defun jwt--random-bytes (n)
   "Generate random byte string of N chars.
@@ -354,26 +354,22 @@ Specifically it should have
 - a JOSE header
 - a JSON payload with JWT claims
 - a signature."
-  (condition-case nil
-      (progn
-        (let* ((maybe-token (jwt-to-token-json test-string))
-               (jose-header (jwt-token-json-header-parsed maybe-token))
-               (payload (jwt-token-json-payload-parsed maybe-token)))
-          (and
-           ;; JOSE
-           (or
-            (equal (map-elt jose-header "typ") "JWT")
-            (map-contains-key jose-header "alg"))
-           ;; payload
-           (or
-            (map-contains-key payload "iat")
-            (map-contains-key payload "exp")
-            (map-contains-key payload "iss"))
-           ;; signature
-           (jwt-token-json-signature maybe-token))
-          't))
-    (error
-     nil)))
+  (ignore-errors
+    (let* ((maybe-token (jwt-to-token-json test-string))
+           (jose-header (jwt-token-json-header-parsed maybe-token))
+           (payload (jwt-token-json-payload-parsed maybe-token)))
+      (and
+       ;; JOSE
+       (or
+        (equal (map-elt jose-header "typ") "JWT")
+        (map-contains-key jose-header "alg"))
+       ;; payload
+       (or
+        (map-contains-key payload "iat")
+        (map-contains-key payload "exp")
+        (map-contains-key payload "iss"))
+       ;; signature
+       (jwt-token-json-signature maybe-token)))))
 
 (defvar jwt-local-token nil "Buffer token string when in a JWT buffer.")
 (make-variable-buffer-local 'jwt-local-token)
