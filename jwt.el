@@ -2,7 +2,7 @@
 
 ;; Author: Josh Bax
 ;; Maintainer: Josh Bax
-;; Version: 0.1.0
+;; Version: 0.1.1
 ;; Package-Requires: ((emacs "29.1"))
 ;; Homepage: https://github.com/joshbax189/jwt-el
 ;; Keywords: tools convenience
@@ -27,6 +27,11 @@
 ;;; Commentary:
 
 ;; Never paste your tokens into jwt.io again!
+;; Decode and verify JSON Web Tokens in Emacs.
+;;
+;; Verification is supported for RSA and HMAC signatures, with SHA256, SHA384 and SHA512 hashes.
+;;
+;; Signing is supported for HMAC only.
 
 ;;; Code:
 
