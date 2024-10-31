@@ -40,6 +40,175 @@
 (require 'hmac-def)
 (require 'calc-arith)
 
+(defvar jwt--defined-claims-alist
+  '(;; registered claim names
+    (iss "Issuer" "Identifies principal that issued the JWT.")
+    (sub "Subject" "Identifies the subject of the JWT.")
+    (aud "Audience" "Identifies the recipients that the JWT is intended for. Each principal intended to process the JWT must identify itself with a value in the audience claim. If the principal processing the claim does not identify itself with a value in the aud claim when this claim is present, then the JWT must be rejected.")
+    (exp "Expiration Time" "Identifies the expiration time on and after which the JWT must not be accepted for processing. The value must be a NumericDate: either an integer or decimal, representing seconds past 1970-01-01 00:00:00Z.")
+    (nbf "Not Before" "Identifies the time on which the JWT will start to be accepted for processing. The value must be a NumericDate.")
+    (iat "Issued at" "Identifies the time at which the JWT was issued. The value must be a NumericDate.")
+    (jti "JWT ID" "Case-sensitive unique identifier of the token even among different issuers.")
+    (roles "Roles")
+    (groups "Groups")
+    (entitlements "Entitlements")
+    ;; header names
+    (typ "Token type"	"If present, it must be set to a registered IANA Media Type.")
+    (cty "Content type" "If nested signing or encryption is employed, it is recommended to set this to JWT; otherwise, omit this field.")
+    (alg "Message authentication code algorithm" "The issuer can freely set an algorithm to verify the signature on the token.")
+    (kid "Key ID" "A hint indicating which key the client used to generate the token signature. The server will match this value to a key on file in order to verify that the signature is valid and the token is authentic.")
+    (x5c "x.509 Certificate Chain" "A certificate chain in RFC4945 format corresponding to the private key used to generate the token signature. The server will use this information to verify that the signature is valid and the token is authentic.")
+    (x5u "x.509 Certificate Chain URL" "A URL where the server can retrieve a certificate chain corresponding to the private key used to generate the token signature. The server will retrieve and use this information to verify that the signature is authentic.")
+    (crit "Critical" "A list of headers that must be understood by the server in order to accept the token as valid")
+    ;; additional claims from IANA -- see https://www.iana.org/assignments/jwt/jwt.xhtml
+    ;; OIDC core
+    (azp "Authorized party" "The party to which the ID Token was issued")
+    (auth_time "Authentication Time.")
+    (at_hash "Access Token hash value")
+    (acr "Authentication Context Class Reference")
+    (amr "Authentication Methods References")
+    (nonce "Value used to associate a Client session with an ID Token (MAY also be used for nonce values in other applications of JWTs)")
+    (c_hash "Code hash value")
+    (name "Full name")
+    (given_name "Given name(s) or first name(s)")
+    (family_name "Surname(s) or last name(s)")
+    (middle_name "Middle name(s)")
+    (nickname "Casual name")
+    (preferred_username "Shorthand name by which the End-User wishes to be referred to")
+    (profile "Profile page URL")
+    (picture "Profile picture URL")
+    (website "Web page or blog URL")
+    (email "Preferred e-mail address")
+    (email_verified "True if the e-mail address has been verified; otherwise false")
+    (gender "Gender")
+    (birthdate "Birthday")
+    (zoneinfo "Time zone")
+    (locale "Locale")
+    (phone_number "Preferred telephone number")
+    (phone_number_verified "True if the phone number has been verified; otherwise false")
+    (address "Preferred postal address")
+    (updated_at "Time the information was last updated")
+    (_claim_names "JSON object whose member names are the Claim Names for the Aggregated and Distributed Claims")
+    (_claim_sources "JSON object whose member names are referenced by the member values of the _claim_names member")
+    (sub_jwk "Public key used to check the signature of an ID Token")
+    ;; OIDC IA
+    (verified_claims "This container Claim is composed of the verification evidence related to a certain verification process and the corresponding Claims about the End-User which were verified in this process.")
+    (place_of_birth "A structured claim representing the end-user's place of birth.")
+    (nationalities "String array representing the end-user's nationalities.")
+    (birth_family_name "Family name(s) someone has when they were born, or at least from the time they were a child. This term can be used by a person who changes the family name(s) later in life for any reason. Note that in some cultures, people can have multiple family names or no family name; all can be present, with the names being separated by space characters.")
+    (birth_given_name "Given name(s) someone has when they were born, or at least from the time they were a child. This term can be used by a person who changes the given name later in life for any reason. Note that in some cultures, people can have multiple given names; all can be present, with the names being separated by space characters.")
+    (birth_middle_name "Middle name(s) someone has when they were born, or at least from the time they were a child. This term can be used by a person who changes the middle name later in life for any reason. Note that in some cultures, people can have multiple middle names; all can be present, with the names being separated by space characters. Also note that in some cultures middle names are not used.")
+    (salutation "End-user's salutation, e.g. \"Mr\"")
+    (title "End-user's title, e.g. \"Dr\"")
+    (msisdn "End-user's mobile phone number formatted according to ITU-T recommendation")
+    (also_known_as "Stage name, religious name or any other type of alias/pseudonym with which a person is known in a specific context besides its legal name.")
+    ;; OIDC logout
+    (sid "Session ID" "Specified in OpenID Connect Front-Channel Logout")
+    ;; OAuth JWT introspection
+    (token_introspection "Token introspection response")
+    ;; RATS Entity Attestation Token (EAT)
+    (eat_nonce "Entity Attestation Token Nonce")
+    (ueid "The Universal Entity ID")
+    (sueids "Semi-permanent UEIDs")
+    (oemid "Hardware OEM ID")
+    (hwmodel "Model identifier for hardware")
+    (hwversion "Hardware Version Identifier")
+    (oemboot "Indicates whether the software booted was OEM authorized")
+    (dbgstat "Debug Status" "Indicates status of debug facilities")
+    (location "The geographic location")
+    (eat_profile "Entity Attestation Token Profile" "Indicates the EAT profile followed")
+    (submods "The section containing submodules")
+    (uptime "Uptime")
+    (bootcount "The number times the entity or submodule has been booted")
+    (bootseed "Identifies a boot cycle")
+    (dloas "Certifications received as Digital Letters of Approval")
+    (swname "The name of the software running in the entity")
+    (swversion "The version of software running in the entity")
+    (manifests "Manifests describing the software installed on the entity")
+    (measurements "Measurements of the software, memory configuration and such on the entity")
+    (measres "The results of comparing software measurements to reference values")
+    (intuse "Indicates intended use of the EAT")
+    ;; stir passport
+    (rcd "Rich Call Data Information")
+    (rcdi "Rich Call Data Integrity Information")
+    (crn "Call Reason")
+    ;; RFC7800
+    (cnf "Confirmation")
+    ;; RFC8055
+    (sip_from_tag "SIP From tag header field parameter value")
+    (sip_date "SIP Date header field value")
+    (sip_callid "SIP Call-Id header field value")
+    (sip_cseq_num "SIP CSeq numeric header field parameter value")
+    (sip_via_branch "SIP Via branch header field parameter value")
+    ;; RFC8225
+    (orig "Originating Identity String")
+    (dest "Destination Identity String")
+    (mky "Media Key Fingerprint String")
+    ;; RFC8417
+    (events "Security Events")
+    (toe "Time of Event")
+    (txn "Transaction Identifier")
+    ;; RFC8443
+    (rph "Resource Priority Header Authorization")
+    ;; RFC8485
+    (vot "Vector of Trust value")
+    (vtm "Vector of Trust trustmark URL")
+    (attest "Attestation level as defined in SHAKEN framework")
+    (origid "Originating Identifier as defined in SHAKEN framework")
+    ;; RFC8693
+    (act "Actor")
+    (scope "Scope Values")
+    (client_id "Client Identifier")
+    (may_act "Authorized Actor - the party that is authorized to become the actor")
+    ;; RFC8688
+    (jcard "jCard data")
+    ;; RFC8946
+    (div "Diverted Target of a Call")
+    (opt "Original PASSporT (in Full Form)")
+    ;; RFC9027
+    (sph "SIP Priority header field")
+    ;; RFC9200
+    (exi "Expires in" "Lifetime of the token in seconds from the time the RS first sees it.  Used to implement a weaker from of token expiration for devices that cannot synchronize their internal clocks.")
+    (ace_profile "The ACE profile a token is supposed to be used with.")
+    (cnonce "Client Nonce" "A nonce previously provided to the AS by the RS via the client.  Used to verify token freshness when the RS cannot synchronize its clock with the AS.")
+    ;; RFC9246
+    (cdniip "CDNI IP Address")
+    (cdniuc "CDNI URI Container")
+    (cdniets "CDNI Expiration Time Setting for Signed Token Renewal")
+    (cdnistt "CDNI Signed Token Transport Method for Signed Token Renewal")
+    (cdnistd "CDNI Signed Token Depth")
+    (cdniv "CDNI Claim Set Version")
+    (cdnicrit "CDNI Critical Claims Set")
+    ;; RFC9321
+    (sig_val_claims "Signature Validation Token")
+    ;; RFC9396
+    (authorization_details "The claim authorization_details contains a JSON array of JSON objects representing the rights of the access token. Each JSON object contains the data to specify the authorization requirements for a certain type of resource.")
+    ;; RFC9447
+    (atc "Authority Token Challenge")
+    ;; RFC9449
+    (htm "The HTTP method of the request")
+    (htu "The HTTP URI of the request (without query and fragment parts)")
+    (ath "The base64url-encoded SHA-256 hash of the ASCII encoding of the associated access token's value")
+    ;; RFC9475
+    (msgi "Message Integrity Information")
+    ;; RFC9493
+    (sub_id "Subject Identifier")
+    ;; RFC9560
+    (rdap_allowed_purposes "This claim describes the set of RDAP query purposes that are available to an identity that is presented for access to a protected RDAP resource.")
+    (rdap_dnt_allowed "This claim contains a JSON boolean literal that describes a \"do not track\" request for server-side tracking, logging, or recording of an identity that is presented for access to a protected RDAP resource.")
+    ;; W3C VC
+    (vc "Verifiable Credential" "As specified in the W3C Recommendation")
+    (vp "Verifiable Presentation" "As specified in the W3C Recommendation")
+    ;; ETSI NFV-SEC 022
+    (at_use_nbr "Number of API requests for which the access token can be used")
+    ;; CTA-5009
+    (geohash "Geohash String or Array"))
+  "Documentation strings for ElDoc.
+Each alist member should be a list in any of these formats:
+  LIST                     DOCUMENTATION OUTPUT
+  (foo \"document\")         \"foo: document\"
+  (foo \"name\" \"document\")  \"name: document\"")
+
 (defun jwt--hex-string-to-bytes (hex &optional left-align)
   "Convert a hex string HEX to a byte string.
 
@@ -434,32 +603,15 @@ Specifically it checks that TEST-STRING has
       (message "Token signature OK")
     (message "Token signature INVALID")))
 
-(defvar jwt--defined-claims-alist
-  '(;; registered claim names
-    (iss "Issuer" "Identifies principal that issued the JWT.")
-    (sub "Subject" "Identifies the subject of the JWT.")
-    (aud "Audience" "Identifies the recipients that the JWT is intended for. Each principal intended to process the JWT must identify itself with a value in the audience claim. If the principal processing the claim does not identify itself with a value in the aud claim when this claim is present, then the JWT must be rejected.")
-    (exp "Expiration Time" "Identifies the expiration time on and after which the JWT must not be accepted for processing. The value must be a NumericDate: either an integer or decimal, representing seconds past 1970-01-01 00:00:00Z.")
-    (nbf "Not Before" "Identifies the time on which the JWT will start to be accepted for processing. The value must be a NumericDate.")
-    (iat "Issued at" "Identifies the time at which the JWT was issued. The value must be a NumericDate.")
-    (jti "JWT ID" "Case-sensitive unique identifier of the token even among different issuers.")
-    ;; header names
-    (typ "Token type"	"If present, it must be set to a registered IANA Media Type.")
-    (cty "Content type" "If nested signing or encryption is employed, it is recommended to set this to JWT; otherwise, omit this field.")
-    (alg "Message authentication code algorithm" "The issuer can freely set an algorithm to verify the signature on the token.")
-    (kid "Key ID" "A hint indicating which key the client used to generate the token signature. The server will match this value to a key on file in order to verify that the signature is valid and the token is authentic.")
-    (x5c "x.509 Certificate Chain" "A certificate chain in RFC4945 format corresponding to the private key used to generate the token signature. The server will use this information to verify that the signature is valid and the token is authentic.")
-    (x5u "x.509 Certificate Chain URL" "A URL where the server can retrieve a certificate chain corresponding to the private key used to generate the token signature. The server will retrieve and use this information to verify that the signature is authentic.")
-    (crit "Critical" "A list of headers that must be understood by the server in order to accept the token as valid"))
-  "Documentation strings for ElDoc.")
-
 (defun jwt--eldoc (callback &rest _ignored)
   "Document defined claims with ElDoc CALLBACK."
   (when-let* ((maybe-claim (sexp-at-point))
-              (maybe-doc (cdr (assoc maybe-claim jwt--defined-claims-alist)))
-              (full-name (car maybe-doc))
-              (doco (cadr maybe-doc)))
-    (funcall callback doco :thing full-name)))
+              (maybe-doc (cdr (assoc maybe-claim jwt--defined-claims-alist))))
+    (let* ((full-name (when (eq 2 (length maybe-doc))
+                        (pop maybe-doc)))
+           (full-name (or full-name maybe-claim))
+           (doco (car maybe-doc)))
+      (funcall callback doco :thing full-name))))
 
 (define-minor-mode jwt-minor-mode
   "Display decoded contents of JWTs."
