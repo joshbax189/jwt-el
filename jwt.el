@@ -413,6 +413,15 @@ Specifically it checks that TEST-STRING has
       (message "No token selected"))
     (jwt-decode maybe-token)))
 
+;;;###autoload
+(defun jwt-decode-region (start end)
+  "Decode token in region START to END and display results in a buffer."
+  (interactive "r")
+  (when (and (called-interactively-p 'interactive) (not (region-active-p)))
+             (user-error "No active region"))
+  (jwt-decode
+   (string-trim (buffer-substring-no-properties start end) "[\"'`]+" "[\"'`]+")))
+
 (defun jwt-verify-current-token (key)
   "Verfiy the currently displayed token using KEY."
   (interactive "Mkey: ")
