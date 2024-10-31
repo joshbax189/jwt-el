@@ -165,6 +165,10 @@ You can set the "iat" claim to reflect current time, like so:
 
 ** Changelog
 
+*** 0.2.0
+- add jwt-decode-region
+- add IANA defined claims to eldoc
+
 *** 0.1.1
 - fix token string predicate
 
