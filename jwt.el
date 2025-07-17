@@ -613,6 +613,50 @@ Specifically it checks that TEST-STRING has
            (doco (car maybe-doc)))
       (funcall callback doco :thing full-name))))
 
+(defvar jwt--annotation-claims
+  '(("nbf" . "Not before")
+    ("iat" . "Issued at")
+    ("exp" . "Expires")))
+
+(defface jwt-annotation
+  '((t
+     (:box
+      (:line-width (1 . 1)
+                   :color nil
+                   :style nil)
+      :inherit (magit-branch-local))))
+  "Face for JWT claim annotation overlays.")
+
+(defun jwt--annotation-add-overlays (beg end)
+  "Add JWT related overlays between BEG and END."
+  (save-excursion
+    (goto-char beg)
+    (let ((claims-rx (rx "\"" (eval (cons 'group (list (cons 'or (mapcar #'car jwt--annotation-claims))))) "\""
+                         (* space) ":" (* space) (group (+ digit)))))
+      (while (re-search-forward claims-rx end t)
+        (let ((ov (make-overlay (match-beginning 0) (match-end 0)))
+              (claim (match-string-no-properties 1))
+              (formatted-time (thread-last (match-string-no-properties 2)
+                                           string-to-number
+                                           seconds-to-time
+                                           (format-time-string "%Y-%m-%d %a %H:%M:%S %Z"))))
+          (overlay-put ov 'category 'jwt)
+          (overlay-put ov 'after-string
+                       (concat " "
+                               (propertize (concat (assoc-default claim jwt--annotation-claims) " " formatted-time)
+                                           'face 'jwt-annotation))))))))
+
+(defun jwt--annotation-remove-overlays (beg end)
+  "Cleanup all JWT related overlays between BEG and END."
+  (dolist (o (overlays-in beg end))
+    (when (eq (overlay-get o 'category) 'jwt)
+      (delete-overlay o))))
+
+(defun jwt--update-overlays (beg end)
+  "Update JWT related overlays between BEG and END."
+  (jwt--annotation-remove-overlays beg end)
+  (jwt--annotation-add-overlays beg end))
+
 (define-minor-mode jwt-minor-mode
   "Display decoded contents of JWTs."
   :interactive nil
@@ -620,6 +664,7 @@ Specifically it checks that TEST-STRING has
             "C-c C-c" #'jwt-verify-current-token)
   :lighter " JWT-decoded"
   (add-hook 'eldoc-documentation-functions #'jwt--eldoc nil t)
+  (jit-lock-register 'jwt--update-overlays)
   (eldoc-mode))
 
 (provide 'jwt)
