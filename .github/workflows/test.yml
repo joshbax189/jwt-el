@@ -1,0 +1,38 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: silex/emacs:${{ matrix.emacs-version }}-ci-eask
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs-version:
+          - 28.1
+          - 29
+          - master
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Linting
+      run: |
+        eask lint checkdoc
+        eask lint declare
+        eask lint package
+        eask compile --clean
+
+    - name: Run tests
+      run: |
+        eask run script test
