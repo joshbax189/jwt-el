@@ -19,8 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         emacs-version:
-          - 28.1
-          - 29
+          - 29.1
           - master
 
     steps:
