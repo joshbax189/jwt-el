@@ -624,12 +624,12 @@ Specifically it checks that TEST-STRING has
     ("exp" . "Expires")))
 
 (defface jwt-annotation
-  '((t
-     (:box
-      (:line-width (1 . 1)
-                   :color nil
-                   :style nil)
-      :inherit (magit-branch-local))))
+  '((default :box
+             (:line-width (1 . 1)
+                          :color nil
+                          :style nil))
+    (((class color) (background light)) :foreground "SkyBlue4")
+    (((class color) (background  dark)) :foreground "LightSkyBlue1"))
   "Face for JWT claim annotation overlays."
   :group 'jwt-el)
 
