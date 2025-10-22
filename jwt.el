@@ -618,10 +618,22 @@ Specifically it checks that TEST-STRING has
            (doco (car maybe-doc)))
       (funcall callback doco :thing full-name))))
 
-(defvar jwt--annotation-claims
-  '(("nbf" . "Not before")
-    ("iat" . "Issued at")
-    ("exp" . "Expires")))
+;; TODO define a custom var to disable
+(defvar jwt--annotation-claim-functions
+  (list (jwt--make-time-annotation-function "nbf" "Not before")
+        (jwt--make-time-annotation-function "iat" "Issued at")
+        (jwt--make-time-annotation-function "exp" "Expires"))
+  "List of forms like (:regexp R :function F).
+See `jwt--make-time-annotation-function' for example.")
+
+(defun jwt--make-time-annotation-function (claim prefix)
+  "Create an annotation function matching CLAIM and printing PREFIX + time."
+  (list :regexp (rx "\"" (literal claim) "\"" (* space) ":" (* space) (group (+ digit)))
+        ;; function expects to use match data
+        :function (lambda ()
+                    (let* ((time (string-to-number (match-string-no-properties 1)))
+                           (formatted-time (format-time-string "%Y-%m-%d %a %H:%M:%S %Z" time)))
+                      (propertize (format "%s %s" prefix formatted-time) 'face 'jwt-annotation)))))
 
 (defface jwt-annotation
   '((default :box
@@ -637,20 +649,14 @@ Specifically it checks that TEST-STRING has
   "Add JWT related overlays between BEG and END."
   (save-excursion
     (goto-char beg)
-    (let ((claims-rx (rx "\"" (eval (cons 'group (list (cons 'or (mapcar #'car jwt--annotation-claims))))) "\""
-                         (* space) ":" (* space) (group (+ digit)))))
-      (while (re-search-forward claims-rx end t)
-        (let ((ov (make-overlay (match-beginning 0) (match-end 0)))
-              (claim (match-string-no-properties 1))
-              (formatted-time (thread-last (match-string-no-properties 2)
-                                           string-to-number
-                                           seconds-to-time
-                                           (format-time-string "%Y-%m-%d %a %H:%M:%S %Z"))))
-          (overlay-put ov 'category 'jwt)
-          (overlay-put ov 'after-string
-                       (concat " "
-                               (propertize (concat (assoc-default claim jwt--annotation-claims) " " formatted-time)
-                                           'face 'jwt-annotation))))))))
+    (dolist (claim-fn jwt--annotation-claim-functions)
+      (let ((claim-rx (plist-get claim-fn :regexp))
+            (claim-fn (plist-get claim-fn :function)))
+        (save-match-data
+          (while (re-search-forward claim-rx end t)
+            (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
+              (overlay-put ov 'category 'jwt)
+              (overlay-put ov 'after-string (concat " " (funcall claim-fn))))))))))
 
 (defun jwt--annotation-remove-overlays (beg end)
   "Cleanup all JWT related overlays between BEG and END."
