@@ -623,21 +623,18 @@ Specifically it checks that TEST-STRING has
   :type 'boolean
   :group 'jwt-el)
 
-(defvar jwt--annotation-claim-functions
-  (list (jwt--make-time-annotation-function "nbf" "Not before")
-        (jwt--make-time-annotation-function "iat" "Issued at")
-        (jwt--make-time-annotation-function "exp" "Expires"))
-  "List of forms like (:regexp R :function F).
-See `jwt--make-time-annotation-function' for example.")
+(defun jwt--format-time (time)
+  "Make numeric TIME human readable."
+  (when (stringp time)
+    (setq time (string-to-number time)))
+  (format-time-string "%Y-%m-%d %a %H:%M:%S %Z" time))
 
-(defun jwt--make-time-annotation-function (claim prefix)
-  "Create an annotation function matching CLAIM and printing PREFIX + time."
-  (list :regexp (rx "\"" (literal claim) "\"" (* space) ":" (* space) (group (+ digit)) (? ","))
-        ;; function expects to use match data
-        :function (lambda ()
-                    (let* ((time (string-to-number (match-string-no-properties 1)))
-                           (formatted-time (format-time-string "%Y-%m-%d %a %H:%M:%S %Z" time)))
-                      (propertize (format "%s %s" prefix formatted-time) 'face 'jwt-annotation)))))
+(defun jwt--make-claim-regexp (claim)
+  "Return a regexp matching a line with JSON property CLAIM.
+The value of the property is in the first capture group.
+Assumes JSON is formatted so that there is a single property per line."
+  (rx "\"" (literal claim) "\"" (* space) ":"
+      (* space) (? "\"") (group (+ word)) (? "\"") (? ",")))
 
 (defface jwt-annotation
   '((default :box
@@ -648,6 +645,41 @@ See `jwt--make-time-annotation-function' for example.")
     (((class color) (background  dark)) :foreground "LightSkyBlue1"))
   "Face for JWT claim annotation overlays."
   :group 'jwt-el)
+
+(defface jwt-annotation-expired
+  '((t :inherit jwt-annotation :foreground "red" ))
+  "Face for expired overlay."
+  :group 'jwt-el)
+
+(defface jwt-annotation-not-valid
+  '((t :inherit jwt-annotation :foreground "orange" ))
+  "Face for overlay for when nbf time has not been reached."
+  :group 'jwt-el)
+
+(defvar jwt--annotation-claim-functions
+  (list
+   (list :regexp (jwt--make-claim-regexp "nbf")
+         :function (lambda ()
+                     (let* ((time (string-to-number (match-string-no-properties 1)))
+                            (formatted-time (jwt--format-time time)))
+                       (if (> time (float-time))
+                           (propertize (format "Not valid until %s" formatted-time) 'face 'jwt-annotation-not-valid)
+                         (propertize (format "Not before %s" formatted-time) 'face 'jwt-annotation)))))
+   (list :regexp (jwt--make-claim-regexp "iat")
+         :function (lambda ()
+                     (let* ((time (match-string-no-properties 1))
+                            (formatted-time (jwt--format-time time)))
+                       (propertize (format "Issued at %s" formatted-time) 'face 'jwt-annotation))))
+   (list :regexp (jwt--make-claim-regexp "exp")
+         :function (lambda ()
+                     (let* ((time (string-to-number (match-string-no-properties 1)))
+                            (formatted-time (jwt--format-time time)))
+                       (if (< time (float-time))
+                           (propertize (format "Expired %s" formatted-time) 'face 'jwt-annotation-expired)
+                         (propertize (format "Expires at %s" formatted-time) 'face 'jwt-annotation))))))
+  "List of forms like (:regexp R :function F).
+Function forms F should take no arguments and return a propertized string.
+Match data will be set with the result of matching R.")
 
 (defun jwt--annotation-add-overlays (beg end)
   "Add JWT related overlays between BEG and END."
