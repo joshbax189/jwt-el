@@ -39,6 +39,7 @@
 (require 'cl-lib)
 (require 'hmac-def)
 (require 'calc-arith)
+(require 'rx)
 
 (defvar jwt--defined-claims-alist
   '(;; registered claim names
