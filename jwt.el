@@ -654,9 +654,7 @@ Specifically it checks that TEST-STRING has
 
 (defun jwt--annotation-remove-overlays (beg end)
   "Cleanup all JWT related overlays between BEG and END."
-  (dolist (o (overlays-in beg end))
-    (when (eq (overlay-get o 'category) 'jwt)
-      (delete-overlay o))))
+  (remove-overlays beg end 'category 'jwt))
 
 (defun jwt--update-overlays (beg end)
   "Update JWT related overlays between BEG and END."
