@@ -632,7 +632,7 @@ See `jwt--make-time-annotation-function' for example.")
 
 (defun jwt--make-time-annotation-function (claim prefix)
   "Create an annotation function matching CLAIM and printing PREFIX + time."
-  (list :regexp (rx "\"" (literal claim) "\"" (* space) ":" (* space) (group (+ digit)))
+  (list :regexp (rx "\"" (literal claim) "\"" (* space) ":" (* space) (group (+ digit)) (? ","))
         ;; function expects to use match data
         :function (lambda ()
                     (let* ((time (string-to-number (match-string-no-properties 1)))
