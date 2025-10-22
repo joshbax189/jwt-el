@@ -618,7 +618,11 @@ Specifically it checks that TEST-STRING has
            (doco (car maybe-doc)))
       (funcall callback doco :thing full-name))))
 
-;; TODO define a custom var to disable
+(defcustom jwt-enable-overlays t
+  "If non-nil, display overlays."
+  :type 'boolean
+  :group 'jwt-el)
+
 (defvar jwt--annotation-claim-functions
   (list (jwt--make-time-annotation-function "nbf" "Not before")
         (jwt--make-time-annotation-function "iat" "Issued at")
@@ -665,7 +669,8 @@ See `jwt--make-time-annotation-function' for example.")
 (defun jwt--update-overlays (beg end)
   "Update JWT related overlays between BEG and END."
   (jwt--annotation-remove-overlays beg end)
-  (jwt--annotation-add-overlays beg end))
+  (when jwt-enable-overlays
+    (jwt--annotation-add-overlays beg end)))
 
 (define-minor-mode jwt-minor-mode
   "Display decoded contents of JWTs."
