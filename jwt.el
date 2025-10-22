@@ -41,6 +41,10 @@
 (require 'calc-arith)
 (require 'rx)
 
+(defgroup jwt-el nil
+  "JSON Web Token display and signing."
+  :group 'comm)
+
 (defvar jwt--defined-claims-alist
   '(;; registered claim names
     (iss "Issuer" "Identifies principal that issued the JWT.")
@@ -626,7 +630,8 @@ Specifically it checks that TEST-STRING has
                    :color nil
                    :style nil)
       :inherit (magit-branch-local))))
-  "Face for JWT claim annotation overlays.")
+  "Face for JWT claim annotation overlays."
+  :group 'jwt-el)
 
 (defun jwt--annotation-add-overlays (beg end)
   "Add JWT related overlays between BEG and END."
