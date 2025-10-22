@@ -39,6 +39,11 @@
 (require 'cl-lib)
 (require 'hmac-def)
 (require 'calc-arith)
+(require 'rx)
+
+(defgroup jwt-el nil
+  "JSON Web Token display and signing."
+  :group 'comm)
 
 (defvar jwt--defined-claims-alist
   '(;; registered claim names
@@ -613,49 +618,91 @@ Specifically it checks that TEST-STRING has
            (doco (car maybe-doc)))
       (funcall callback doco :thing full-name))))
 
-(defvar jwt--annotation-claims
-  '(("nbf" . "Not before")
-    ("iat" . "Issued at")
-    ("exp" . "Expires")))
+(defcustom jwt-enable-overlays t
+  "If non-nil, display overlays."
+  :type 'boolean
+  :group 'jwt-el)
+
+(defun jwt--format-time (time)
+  "Make numeric TIME human readable."
+  (when (stringp time)
+    (setq time (string-to-number time)))
+  (format-time-string "%Y-%m-%d %a %H:%M:%S %Z" time))
+
+(defun jwt--make-claim-regexp (claim)
+  "Return a regexp matching a line with JSON property CLAIM.
+The value of the property is in the first capture group.
+Assumes JSON is formatted so that there is a single property per line."
+  (rx "\"" (literal claim) "\"" (* space) ":"
+      (* space) (? "\"") (group (+ word)) (? "\"") (? ",")))
 
 (defface jwt-annotation
-  '((t
-     (:box
-      (:line-width (1 . 1)
-                   :color nil
-                   :style nil)
-      :inherit (magit-branch-local))))
-  "Face for JWT claim annotation overlays.")
+  '((default :box
+             (:line-width (1 . 1)
+                          :color nil
+                          :style nil))
+    (((class color) (background light)) :foreground "SkyBlue4")
+    (((class color) (background  dark)) :foreground "LightSkyBlue1"))
+  "Face for JWT claim annotation overlays."
+  :group 'jwt-el)
+
+(defface jwt-annotation-expired
+  '((t :inherit jwt-annotation :foreground "red" ))
+  "Face for expired overlay."
+  :group 'jwt-el)
+
+(defface jwt-annotation-not-valid
+  '((t :inherit jwt-annotation :foreground "orange" ))
+  "Face for overlay for when nbf time has not been reached."
+  :group 'jwt-el)
+
+(defvar jwt--annotation-claim-functions
+  (list
+   (list :regexp (jwt--make-claim-regexp "nbf")
+         :function (lambda ()
+                     (let* ((time (string-to-number (match-string-no-properties 1)))
+                            (formatted-time (jwt--format-time time)))
+                       (if (> time (float-time))
+                           (propertize (format "Not valid until %s" formatted-time) 'face 'jwt-annotation-not-valid)
+                         (propertize (format "Not before %s" formatted-time) 'face 'jwt-annotation)))))
+   (list :regexp (jwt--make-claim-regexp "iat")
+         :function (lambda ()
+                     (let* ((time (match-string-no-properties 1))
+                            (formatted-time (jwt--format-time time)))
+                       (propertize (format "Issued at %s" formatted-time) 'face 'jwt-annotation))))
+   (list :regexp (jwt--make-claim-regexp "exp")
+         :function (lambda ()
+                     (let* ((time (string-to-number (match-string-no-properties 1)))
+                            (formatted-time (jwt--format-time time)))
+                       (if (< time (float-time))
+                           (propertize (format "Expired %s" formatted-time) 'face 'jwt-annotation-expired)
+                         (propertize (format "Expires at %s" formatted-time) 'face 'jwt-annotation))))))
+  "List of forms like (:regexp R :function F).
+Function forms F should take no arguments and return a propertized string.
+Match data will be set with the result of matching R.")
 
 (defun jwt--annotation-add-overlays (beg end)
   "Add JWT related overlays between BEG and END."
   (save-excursion
     (goto-char beg)
-    (let ((claims-rx (rx "\"" (eval (cons 'group (list (cons 'or (mapcar #'car jwt--annotation-claims))))) "\""
-                         (* space) ":" (* space) (group (+ digit)))))
-      (while (re-search-forward claims-rx end t)
-        (let ((ov (make-overlay (match-beginning 0) (match-end 0)))
-              (claim (match-string-no-properties 1))
-              (formatted-time (thread-last (match-string-no-properties 2)
-                                           string-to-number
-                                           seconds-to-time
-                                           (format-time-string "%Y-%m-%d %a %H:%M:%S %Z"))))
-          (overlay-put ov 'category 'jwt)
-          (overlay-put ov 'after-string
-                       (concat " "
-                               (propertize (concat (assoc-default claim jwt--annotation-claims) " " formatted-time)
-                                           'face 'jwt-annotation))))))))
+    (dolist (claim-fn jwt--annotation-claim-functions)
+      (let ((claim-rx (plist-get claim-fn :regexp))
+            (claim-fn (plist-get claim-fn :function)))
+        (save-match-data
+          (while (re-search-forward claim-rx end t)
+            (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
+              (overlay-put ov 'category 'jwt)
+              (overlay-put ov 'after-string (concat " " (funcall claim-fn))))))))))
 
 (defun jwt--annotation-remove-overlays (beg end)
   "Cleanup all JWT related overlays between BEG and END."
-  (dolist (o (overlays-in beg end))
-    (when (eq (overlay-get o 'category) 'jwt)
-      (delete-overlay o))))
+  (remove-overlays beg end 'category 'jwt))
 
 (defun jwt--update-overlays (beg end)
   "Update JWT related overlays between BEG and END."
   (jwt--annotation-remove-overlays beg end)
-  (jwt--annotation-add-overlays beg end))
+  (when jwt-enable-overlays
+    (jwt--annotation-add-overlays beg end)))
 
 (define-minor-mode jwt-minor-mode
   "Display decoded contents of JWTs."
