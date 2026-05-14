@@ -40,6 +40,7 @@
 (require 'hmac-def)
 (require 'calc-arith)
 (require 'rx)
+(require 'thingatpt)
 
 (defgroup jwt-el nil
   "JSON Web Token display and signing."
@@ -548,6 +549,15 @@ Specifically it checks that TEST-STRING has
        signature
        't))))
 
+(defconst jwt--jwt-regexp
+  (rx (= 2 (+ (any "A-Z" "a-z" "0-9" ?_ ?-)) ?.)
+      (* (any "A-Z" "a-z" "0-9" ?_ ?-))))
+
+(put 'jwt 'bounds-of-thing-at-point
+     (lambda ()
+       (if (thing-at-point-looking-at jwt--jwt-regexp 3000)
+           (cons (match-beginning 0) (match-end 0)))))
+
 (defvar jwt-local-token nil "Buffer token string when in a JWT buffer.")
 (make-variable-buffer-local 'jwt-local-token)
 
@@ -574,18 +584,9 @@ Specifically it checks that TEST-STRING has
 (defun jwt-decode-at-point ()
   "Decode token at point and display results in a buffer."
   (interactive)
-  ;; FIXME: depending on the mode sexp-at-point may miss parts of the token
-  (let* ((maybe-token (sexp-at-point))
-         (maybe-token (if (symbolp maybe-token)
-                          (symbol-name maybe-token)
-                        (if (stringp maybe-token)
-                            maybe-token
-                          (error "Token must be a string"))))
-         (maybe-token (string-trim maybe-token "\"" "\""))
-         (maybe-token (string-trim maybe-token "'" "'")))
-    (unless maybe-token
-      (message "No token selected"))
-    (jwt-decode maybe-token)))
+  (if-let* ((token (thing-at-point 'jwt)))
+      (jwt-decode token)
+    (message "No token selected")))
 
 ;;;###autoload
 (defun jwt-decode-region (start end)
